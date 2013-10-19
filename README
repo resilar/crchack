@@ -1,0 +1,11 @@
+proper README coming soon...
+
+
+usage: ./crchack [options] desired_checksum
+
+options:
+  -c       write CRC checksum to stdout and exit
+  -o pos   starting offset of bits allowed for modification
+  -O pos   offset from the end of the file
+  -b file  read bit offsets from file (not compatible with -oO)
+  -h       show this help
