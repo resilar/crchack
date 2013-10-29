@@ -1,6 +1,8 @@
 #include "crchack.h"
+#include "bigint.h"
 #include "crc32.h"
 #include "forge32.h"
+#include "crc.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,36 +16,51 @@
  */
 static void help(char *argv0)
 {
-    printf("usage: %s [options] desired_checksum\n\n"
-           ""
-           "options:\n"
-           "  -c       write CRC checksum to stdout and exit\n"
-           "  -o pos   starting offset of bits allowed for modification\n"
-           "  -O pos   offset from the end of the file\n"
-           "  -b file  read bit offsets from file (not compatible with -oO)\n"
-           "  -h       show this help\n", argv0);
+    printf("usage: %s [options] desired_checksum\n", argv0);
+    puts("\n"
+         "options:\n"
+         "  -c       write CRC checksum to stdout and exit\n"
+         "  -o pos   starting bit offset of the mutable input bits\n"
+         "  -O pos   offset from the end of the input message\n"
+         "  -b file  read bit offsets from a file\n"
+         "  -h       show this help\n"
+         "\n"
+         "CRC options (CRC-32 if none given):\n"
+         "  -w size  register size in bits   -r       reverse input bits\n"
+         "  -p poly  generator polynomial    -R       reverse final register\n"
+         "  -i init  initial register        -x xor   final register XOR mask");
 }
 
 /**
  * Options.
  */
 static int calculate_crc = 0;
-static int has_offset = 0, negative_offset = 0;
+static int has_offset = 0, negative_offset = 1;
 static char *bits_fn = NULL;
+static size_t bits_offset = 0;
 
+static struct crc_params config;
+static int config_initialized = 0;
+
+struct bigint checksum;
 static u32 desired_checksum;
-static size_t bits_offset;
 
 static int handle_options(int argc, char *argv[])
 {
     char c;
+    int crc_width;
+    char *poly, *init, reflect_in, reflect_out, *xor_out;
+
+    poly = init = xor_out = NULL;
+    reflect_in = reflect_out = 0;
+    crc_width = 0;
 
     /* getopt. */
-    while((c = getopt(argc, argv, "co:O:b:h")) != -1) {
+    while((c = getopt(argc, argv, "co:O:b:hw:p:i:rRx:")) != -1) {
         switch(c) {
         case 'c': calculate_crc = 1; break;
-        case 'O': negative_offset = 1; /* Fall-through. */
-        case 'o': {
+        case 'o': negative_offset = 0; /* Fall-through. */
+        case 'O': {
             int ret = 0;
 
             /* Hex or decimal. */
@@ -66,10 +83,18 @@ static int handle_options(int argc, char *argv[])
         case 'b':
             bits_fn = optarg;
             break;
-
         case 'h': help(argv[0]); return 0;
+
+        /* CRC options. */
+        case 'w': sscanf(optarg, "%d", &crc_width); break;
+        case 'p': poly = optarg; break;
+        case 'i': init = optarg; break;
+        case 'r': reflect_in = 1; break;
+        case 'R': reflect_out = 1; break;
+        case 'x': xor_out = optarg; break;
+
         case '?':
-            if (strchr("oOb", optopt)) {
+            if (strchr("oObwpix", optopt)) {
                 fprintf(stderr, "option -%c requires an argument.\n", optopt);
             } else if (isprint(optopt)) {
                 fprintf(stderr, "unknown option '-%c'.\n", optopt);
@@ -87,9 +112,55 @@ static int handle_options(int argc, char *argv[])
         return 0;
     }
 
+    /* Mutable bits. */
     if (bits_fn && has_offset) {
         fprintf(stderr, "options '-b' and '-oO' are incompatible.\n");
         return 0;
+    }
+
+    /* CRC parameters. */
+    config.width = crc_width ? crc_width : 32;
+    bigint_init(&config.poly, config.width);
+    bigint_init(&config.init, config.width);
+    bigint_init(&config.xor_out, config.width);
+    config_initialized = 1;
+    if (crc_width || poly || init || reflect_in || reflect_out || xor_out) {
+        /* width and poly must be given. */
+        if (!crc_width || !poly) {
+            fprintf(stderr, "CRC width and polynomial are required.\n");
+            return 0;
+        }
+
+        /* CRC generator polynomial. */
+        config.width = crc_width;
+        if (!bigint_from_string(&config.poly, poly)) {
+            fprintf(stderr, "invalid poly.\n");
+            return 0;
+        }
+
+        /* Initial CRC register value. */
+        if (init && !bigint_from_string(&config.init, init)) {
+            fprintf(stderr, "invalid init.\n");
+            return 0;
+        }
+
+        /* Final CRC register xor mask. */
+        if (xor_out && !bigint_from_string(&config.xor_out, xor_out)) {
+            fprintf(stderr, "invalid xor_out.\n");
+            return 0;
+        }
+
+        /* Reflect in/out. */
+        config.reflect_in = reflect_in;
+        config.reflect_out = reflect_out;
+    } else {
+        /* Default: CRC-32. */
+        config.width = 32;
+        bigint_from_string(&config.poly, "04c11db7");
+        bigint_load_ones(&config.init);
+        bigint_load_ones(&config.xor_out);
+        config.reflect_in = 1;
+        config.reflect_out = 1;
     }
 
     /* Parse desired checksum. */
@@ -195,11 +266,11 @@ size_t *read_bits_from_file(char *filename, int *bits_size)
          *
          * - 11         decimal. 2nd byte, 4th bit
          * - 0x0B       hexadecimal. 2nd byte, 4th bit
-         * - 1,3        2nd byte, 4rd bit
-         * - 0x1,3      2nd byte, 4rd bit
+         * - 1,3        2nd byte, 4th bit
+         * - 0x1,3      2nd byte, 4th bit
          *
          * - 2,0xF0     3rd byte, hex mask specifying top 4 bits
-         * - 0x2,0xF0   same as above
+         * - 0x2,0xF0   same as the above
          *
          * TODO: negative indexes (offset from the end of the file).
          */
@@ -208,7 +279,7 @@ size_t *read_bits_from_file(char *filename, int *bits_size)
             char *p;
 
             /* Reallocate buffer if needed. */
-            if (size+8 >= allocated) { /* size may increase by 8 at most. */
+            if (size+8 >= allocated) { /* size may increase by 8 at max. */
                 size_t *new;
                 allocated *= 2;
                 if (!(new = realloc(bits, allocated*sizeof(size_t)))) {
@@ -271,7 +342,7 @@ size_t *read_bits_from_file(char *filename, int *bits_size)
                     goto fail;
                 }
                 if (bit_pos < 0 || bit_pos > 7) {
-                    fprintf(stderr, "invalid bit position (%d) in byte.\n",
+                    fprintf(stderr, "invalid bit position (%d) in a byte.\n",
                             bit_pos);
                     goto fail;
                 }
@@ -330,7 +401,14 @@ int main(int argc, char *argv[])
 
     /* Calculate CRC and exit (-c). */
     if (calculate_crc) {
-        printf("%08x\n", crc32(msg, length));
+        struct bigint checksum;
+        bigint_init(&checksum, config.width);
+
+        crc(msg, length, &config, &checksum);
+        bigint_print(&checksum); puts("");
+        bigint_destroy(&checksum);
+
+        /*printf("%08x\n", crc32(msg, length));*/
         exit_code = 0;
         goto finish;
     }
@@ -437,6 +515,11 @@ int main(int argc, char *argv[])
     exit_code = 0;
 
 finish:
+    if (config_initialized) {
+        bigint_destroy(&config.poly);
+        bigint_destroy(&config.init);
+        bigint_destroy(&config.xor_out);
+    }
     if (bits) free(bits);
     if (msg) free(msg);
     if (out) free(out);

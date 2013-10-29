@@ -79,7 +79,7 @@ static int find_inverse32(const u32 A[], int n, u32 out[],
             }
         }
         if (p >= n) {
-            /* Pivot not found (singular matrix). */
+            /* Pivot not found (underdetermined matrix). */
             free(M);
             return 0;
         }

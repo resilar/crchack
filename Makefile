@@ -5,7 +5,7 @@ CFLAGS = -g -Wall -std=c99 -pedantic
 LDFLAGS =
 
 EXEC = crchack
-SRCS = crchack.c forge32.c crc32.c
+SRCS = crchack.c forge32.c crc32.c bigint.c crc.c
 OBJS := $(SRCS:.c=.o)
 
 all: $(SRCS) $(EXEC)
