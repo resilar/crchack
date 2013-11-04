@@ -1,3 +1,7 @@
+/**
+ * This file is left here as a reference. crchack uses only forge.c
+ */
+
 #include "forge32.h"
 
 #include <stdio.h>
@@ -58,8 +62,9 @@ static int find_inverse32(const u32 A[], int n, u32 out[],
         M[i] = A[i];
     }
 
-    /* Find linearly independent set of rows. */
+    /* Find a linearly independent set of rows. */
     for (i = 0; i < 32; i++) {
+
         /* Find pivot (row with non-zero column i). */
         for (p = i; p < n; p++) {
             if (M[p] & (1 << i)) {
@@ -78,13 +83,14 @@ static int find_inverse32(const u32 A[], int n, u32 out[],
                 break;
             }
         }
+
         if (p >= n) {
             /* Pivot not found (underdetermined matrix). */
             free(M);
             return 0;
         }
 
-        /* Zero column i in all rows except p. */
+        /* Zero out column i in all rows except p. */
         for (j = 0; j < n; j++) {
             if (j == p) continue;
 
@@ -94,7 +100,7 @@ static int find_inverse32(const u32 A[], int n, u32 out[],
         }
     }
 
-    /* M == I. Found linearly independent set of rows. */
+    /* M == I. Found a linearly independent set of rows. */
 
     /* Initialize out, set M = [A[perm[0]], A[perm[1]], ..., A[perm[n-1]]]^T */
     for (i = 0; i < 32; i++) {
@@ -122,7 +128,8 @@ static int find_inverse32(const u32 A[], int n, u32 out[],
 }
 
 #define INVERT_BIT(msg, idx) ((msg)[(idx)/8] ^= 1 << ((idx) % 8))
-u32 forge32(u8 *msg, size_t length, u32 (*H)(u8 *msg, size_t length),
+int forge32(const u8 *msg, size_t length,
+        u32 (*H)(const u8 *msg, size_t length),
         u32 desired_checksum, size_t bits[], int bits_size,
         u8 *out)
 {
@@ -133,7 +140,6 @@ u32 forge32(u8 *msg, size_t length, u32 (*H)(u8 *msg, size_t length),
     if (!(AT = malloc(bits_size*sizeof(u32))))
         return 0;
 
-    /* Build matrix A. */
     memcpy(out, msg, length);
     Hm = H(out, length);
     for (i = 0; i < bits_size; i++) {
@@ -142,13 +148,13 @@ u32 forge32(u8 *msg, size_t length, u32 (*H)(u8 *msg, size_t length),
         INVERT_BIT(out, bits[i]);
     }
 
-    /* Find a non-singular submatrix of size 32x32 and invert it.*/
+    /* Find a non-singular submatrix of size 32x32 and invert it. */
     if (!find_inverse32(AT, bits_size, inverseT, row_permutation)) {
         free(AT);
         return 0;
     }
 
-    /* x = inv * d */
+    /* x = inv(A) * d. */
     d = desired_checksum ^ Hm;
     x = 0;
     for (i = 0; i < 32; i++) {

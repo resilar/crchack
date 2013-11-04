@@ -17,7 +17,7 @@ void bigint_destroy(struct bigint *dest)
     free(dest->buf);
 }
 
-void bigint_fprint(FILE *stream, struct bigint *dest)
+void bigint_fprint(FILE *stream, const struct bigint *dest)
 {
     size_t i;
 
@@ -81,7 +81,7 @@ int bigint_from_string(struct bigint *dest, const char *hex_string)
     return 1;
 }
 
-int bigint_mov(struct bigint *dest, struct bigint *src)
+int bigint_mov(struct bigint *dest, const struct bigint *src)
 {
     if (dest->bits != src->bits)
         return 0;
@@ -124,7 +124,7 @@ void bigint_shr_1(struct bigint *dest)
     }
 }
 
-int bigint_xor(struct bigint *dest, struct bigint *src)
+int bigint_xor(struct bigint *dest, const struct bigint *src)
 {
     size_t i, j;
     if (dest->bits != src->bits)

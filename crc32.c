@@ -1,6 +1,10 @@
+/**
+ * This file is left here as a reference. crchack uses only crc.c
+ */
+
 #include "crc32.h"
 
-u32 crc32(u8 *msg, size_t length)
+u32 crc32(const u8 *msg, size_t length)
 {
     static u32 crc32_table[256], init = 0;
     u32 crc, i, j, poly;

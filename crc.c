@@ -1,7 +1,7 @@
 #include "crc.h"
 
-//void crc(u8 *msg2, size_t length2, struct crc_params *config, struct bigint *out)
-void crc(u8 *msg, size_t length, struct crc_params *config, struct bigint *out)
+void crc(const u8 *msg, size_t length, struct crc_params *config,
+        struct bigint *out)
 {
     size_t i;
     static u8 bit_table[8] = { /* Bytes processed from MSB to LSB. */

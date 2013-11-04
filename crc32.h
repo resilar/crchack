@@ -6,6 +6,6 @@
 /**
  * Calculate CRC32 checksum.
  */
-u32 crc32(u8 *msg, size_t length);
+u32 crc32(const u8 *msg, size_t length);
 
 #endif

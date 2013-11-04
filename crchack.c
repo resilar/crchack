@@ -1,8 +1,7 @@
 #include "crchack.h"
 #include "bigint.h"
-#include "crc32.h"
-#include "forge32.h"
 #include "crc.h"
+#include "forge.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,7 +15,7 @@
  */
 static void help(char *argv0)
 {
-    printf("usage: %s [options] desired_checksum\n", argv0);
+    printf("usage: %s [options] desired_checksum [file]\n", argv0);
     puts("\n"
          "options:\n"
          "  -c       write CRC checksum to stdout and exit\n"
@@ -26,14 +25,15 @@ static void help(char *argv0)
          "  -h       show this help\n"
          "\n"
          "CRC options (CRC-32 if none given):\n"
-         "  -w size  register size in bits   -r       reverse input bits\n"
-         "  -p poly  generator polynomial    -R       reverse final register\n"
-         "  -i init  initial register        -x xor   final register XOR mask");
+         "  -w size  register size in bits   -x xor   final register XOR mask\n"
+         "  -p poly  generator polynomial    -r       reverse input bits\n"
+         "  -i init  initial register        -R       reverse final register");
 }
 
 /**
  * Options.
  */
+static char *input_fn = NULL;
 static int calculate_crc = 0;
 static int has_offset = 0, negative_offset = 1;
 static char *bits_fn = NULL;
@@ -42,21 +42,21 @@ static size_t bits_offset = 0;
 static struct crc_params config;
 static int config_initialized = 0;
 
-struct bigint checksum;
-static u32 desired_checksum;
+struct bigint desired_checksum;
+static int checksum_initialized = 0;
 
 static int handle_options(int argc, char *argv[])
 {
     char c;
     int crc_width;
-    char *poly, *init, reflect_in, reflect_out, *xor_out;
+    char *poly, *init, *xor_out, reflect_in, reflect_out;
 
+    crc_width = 0;
     poly = init = xor_out = NULL;
     reflect_in = reflect_out = 0;
-    crc_width = 0;
 
     /* getopt. */
-    while((c = getopt(argc, argv, "co:O:b:hw:p:i:rRx:")) != -1) {
+    while((c = getopt(argc, argv, "co:O:b:hw:p:i:x:rR")) != -1) {
         switch(c) {
         case 'c': calculate_crc = 1; break;
         case 'o': negative_offset = 0; /* Fall-through. */
@@ -86,12 +86,18 @@ static int handle_options(int argc, char *argv[])
         case 'h': help(argv[0]); return 0;
 
         /* CRC options. */
-        case 'w': sscanf(optarg, "%d", &crc_width); break;
+        case 'w':
+            sscanf(optarg, "%d", &crc_width);
+            if (crc_width <= 0) {
+                fprintf(stderr, "non-positive CRC width (%d).\n", crc_width);
+                return 0;
+            }
+            break;
         case 'p': poly = optarg; break;
         case 'i': init = optarg; break;
+        case 'x': xor_out = optarg; break;
         case 'r': reflect_in = 1; break;
         case 'R': reflect_out = 1; break;
-        case 'x': xor_out = optarg; break;
 
         case '?':
             if (strchr("oObwpix", optopt)) {
@@ -107,7 +113,13 @@ static int handle_options(int argc, char *argv[])
             return 0;
         }
     }
-    if (optind != argc-1 + calculate_crc) {
+    
+    /* Determine input file argument position. */
+    if (optind == argc-1 - !calculate_crc) {
+        input_fn = argv[argc-1];
+    } else if (optind == argc - !calculate_crc) {
+        input_fn = NULL; /* read from stdin. */
+    } else {
         help(argv[0]);
         return 0;
     }
@@ -119,12 +131,12 @@ static int handle_options(int argc, char *argv[])
     }
 
     /* CRC parameters. */
-    config.width = crc_width ? crc_width : 32;
+    config.width = (crc_width) ? crc_width : 32;
     bigint_init(&config.poly, config.width);
     bigint_init(&config.init, config.width);
     bigint_init(&config.xor_out, config.width);
     config_initialized = 1;
-    if (crc_width || poly || init || reflect_in || reflect_out || xor_out) {
+    if (crc_width || poly || init || xor_out || reflect_in || reflect_out) {
         /* width and poly must be given. */
         if (!crc_width || !poly) {
             fprintf(stderr, "CRC width and polynomial are required.\n");
@@ -132,7 +144,6 @@ static int handle_options(int argc, char *argv[])
         }
 
         /* CRC generator polynomial. */
-        config.width = crc_width;
         if (!bigint_from_string(&config.poly, poly)) {
             fprintf(stderr, "invalid poly.\n");
             return 0;
@@ -144,7 +155,7 @@ static int handle_options(int argc, char *argv[])
             return 0;
         }
 
-        /* Final CRC register xor mask. */
+        /* Final CRC register XOR mask. */
         if (xor_out && !bigint_from_string(&config.xor_out, xor_out)) {
             fprintf(stderr, "invalid xor_out.\n");
             return 0;
@@ -165,15 +176,16 @@ static int handle_options(int argc, char *argv[])
 
     /* Parse desired checksum. */
     if (!calculate_crc) {
-        char *str = argv[argc-1];
-        if (str[strspn(str, "0123456789abcdefABCDEF")] != '\0') {
-            fprintf(stderr, "give desired_checksum in hex.\n");
+        char *str = argv[argc-1 - (input_fn != NULL)];
+
+        bigint_init(&desired_checksum, config.width);
+        if (!bigint_from_string(&desired_checksum, str)) {
+            bigint_destroy(&desired_checksum);
+            fprintf(stderr, "checksum '%s' is not a valid %d-bit hex value.\n",
+                    str, config.width);
             return 0;
         }
-        if (sscanf(str, "%x", &desired_checksum) != 1) {
-            fprintf(stderr, "parsing checksum failed.\n");
-            return 0;
-        }
+        checksum_initialized = 1;
     }
 
     return 1;
@@ -190,14 +202,14 @@ static u8 *read_input_message(FILE *in, size_t *msg_length)
     size_t length, allocated;
     u8 *msg;
 
-    /* Read using a dynamic buffer (to support non-seekable streams). */
+    /* Read using dynamic buffer (to support non-seekable streams). */
     length = 0;
     allocated = 256;
     if (!(msg = malloc(allocated)))
         return NULL;
 
-    while (!feof(stdin)) {
-        length += fread(&msg[length], sizeof(char), allocated-length, stdin);
+    while (!feof(in)) {
+        length += fread(&msg[length], sizeof(char), allocated-length, in);
 
         if (length >= allocated) {
             /* Increase buffer length. */
@@ -208,7 +220,7 @@ static u8 *read_input_message(FILE *in, size_t *msg_length)
                 return NULL;
             }
             msg = new;
-        } else if (ferror(stdin)) {
+        } else if (ferror(in)) {
             free(msg);
             return NULL;
         }
@@ -356,10 +368,6 @@ size_t *read_bits_from_file(char *filename, int *bits_size)
             fprintf(stderr, "expected EOF while parsing bits file.\n");
             goto fail;
         }
-
-        /* */
-    /*} else if (!strcmp(word, "mask")) {
-    } else if (!strcmp(word, "maskbin")) {*/ /* TODO */
     } else {
         /* Invalid file format. */
         fprintf(stderr, "invalid bits file format.\n");
@@ -374,6 +382,11 @@ fail:
     if (bits) free(bits);
     fclose(in);
     return NULL;
+}
+
+static void crc_checksum(const u8 *msg, size_t length, struct bigint *out)
+{
+    crc(msg, length, &config, out);
 }
 
 int main(int argc, char *argv[])
@@ -392,11 +405,28 @@ int main(int argc, char *argv[])
         goto finish;
     }
 
-    /* Read message from stdin. */
-    if (!(msg = read_input_message(stdin, &length))) {
-        fprintf(stderr, "reading message from stdin failed.\n");
-        exit_code = 2;
-        goto finish;
+    /* Read input mesasge. */
+    if (input_fn) {
+        FILE *in;
+        if (!(in = fopen(input_fn, "rb"))) {
+            fprintf(stderr, "opening file '%s' for read failed.\n", input_fn);
+            exit_code = 2;
+            goto finish;
+        }
+
+        if (!(msg = read_input_message(in, &length))) {
+            fclose(in);
+            fprintf(stderr, "reading file '%s' failed.\n", input_fn);
+            exit_code = 2;
+            goto finish;
+        }
+        fclose(in);
+    } else {
+        if (!(msg = read_input_message(stdin, &length))) {
+            fprintf(stderr, "reading message from stdin failed.\n");
+            exit_code = 2;
+            goto finish;
+        }
     }
 
     /* Calculate CRC and exit (-c). */
@@ -408,7 +438,6 @@ int main(int argc, char *argv[])
         bigint_print(&checksum); puts("");
         bigint_destroy(&checksum);
 
-        /*printf("%08x\n", crc32(msg, length));*/
         exit_code = 0;
         goto finish;
     }
@@ -416,15 +445,14 @@ int main(int argc, char *argv[])
     /* Create an array of indices of bits that are allowed for manipulation. */
     if (bits_fn) {
         bits = read_bits_from_file(bits_fn, &bits_size);
-
         if (!bits) {
             fprintf(stderr, "reading bit indices from '%s' failed.\n", bits_fn);
             exit_code = 3;
             goto finish;
         }
     } else {
-        /* 32 bits starting from bits_offset. */
-        bits_size = 32;
+        /* config.width bits starting from bits_offset. */
+        bits_size = config.width;
         if (!(bits = malloc(bits_size*sizeof(size_t)))) {
             fprintf(stderr, "allocating bits array failed\n");
             exit_code = 4;
@@ -440,9 +468,9 @@ int main(int argc, char *argv[])
     /* Check bits array and pad message buffer if needed. */
     max = 0;
     for (i = 0; i < bits_size; i++) {
-        if (bits[i] >= length*8 + 32) {
+        if (bits[i] > length*8 + config.width - 1) {
             fprintf(stderr, "bits[%d] = %zu exceeds file length by %zu bits.\n",
-                    i, bits[i], bits[i] - length*8);
+                    i, bits[i], bits[i] - (length*8 + config.width - 1));
             exit_code = 3;
             goto finish;
         }
@@ -479,17 +507,10 @@ int main(int argc, char *argv[])
     }
 
     /* Forge. */
-    if (forge32(msg, length, crc32, desired_checksum, bits, bits_size, out)) {
+    if (forge(msg, length, crc_checksum, &desired_checksum,
+                bits, bits_size, out)) {
+        /* Write the result to stdout. */
         size_t written, ret;
-
-        /* Check result. */
-        if (crc32(out, length) != desired_checksum) {
-            fprintf(stderr, "thought i succeeded, but apparently not.\n");
-            exit_code = 5;
-            goto finish;
-        }
-
-        /* Write to stdout. */
         written = 0;
         do {
             ret = fwrite(&out[written], sizeof(char), length-written, stdout);
@@ -502,7 +523,6 @@ int main(int argc, char *argv[])
             }
             written += ret;
         } while (written < length);
-
     } else {
         fprintf(stderr, "fail. ");
         fprintf(stderr, "try giving more modifiable input bits (got %d).\n",
@@ -515,6 +535,8 @@ int main(int argc, char *argv[])
     exit_code = 0;
 
 finish:
+    if (checksum_initialized)
+        bigint_destroy(&desired_checksum);
     if (config_initialized) {
         bigint_destroy(&config.poly);
         bigint_destroy(&config.init);
