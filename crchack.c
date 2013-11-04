@@ -209,7 +209,7 @@ static u8 *read_input_message(FILE *in, size_t *msg_length)
         return NULL;
 
     while (!feof(in)) {
-        length += fread(&msg[length], sizeof(char), allocated-length, in);
+        length += fread(&msg[length], sizeof(u8), allocated-length, in);
 
         if (length >= allocated) {
             /* Increase buffer length. */
@@ -513,7 +513,7 @@ int main(int argc, char *argv[])
         size_t written, ret;
         written = 0;
         do {
-            ret = fwrite(&out[written], sizeof(char), length-written, stdout);
+            ret = fwrite(&out[written], sizeof(u8), length-written, stdout);
             if (ret != length-written) {
                 if (ferror(stdout)) {
                     fprintf(stderr, "writing result to stdout failed.\n");

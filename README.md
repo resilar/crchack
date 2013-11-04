@@ -3,10 +3,10 @@ by modifying chosen input bits. The main advantage over existing CRC alteration
 tools is the ability to obtain the target checksum by changing non-contiguous
 bits of the input message. crchack supports all commonly used CRC algorithms.
 
-- [Usage](usage)
-- [Supported CRC algorithms](supported-crc-algorithms)
-- [How it works?](how-it-works)
-- [Use cases](use-cases)
+- [Usage](#usage)
+- [Supported CRC algorithms](#supported-crc-algorithms)
+- [How it works?](#how-it-works)
+- [Use cases](#use-cases)
 
 
 # Usage
@@ -72,8 +72,8 @@ bits 0 1,3 0x10 20,0xF0 0x1F,0xFF
 
 The file should specify **at least** *w* bits where *w* is the width of the CRC
 register, e.g., 32 for CRC-32. Obtaining the desired checksum is impossible if
-insufficient amount of mutable input are given. In general, a few bits more than
-*w* tends to be enough if the bits are non-contiguous.
+an insufficient number of mutable bits is given. In general, a few bits more
+than *w* tends to be enough if the bits are non-contiguous.
 
 
 # Supported CRC algorithms
@@ -85,13 +85,13 @@ arguments.
 
 ```
 [crchack]$ echo -ne "123456789" > msg
-[crchack]$ ./crchack -c -w8 -p7 msg                                 # CRC-8
+[crchack]$ ./crchack -c -w8 -p7 msg                                     # CRC-8
 f4
-[crchack]$ ./crchack -c -w16 -p8005 -rR                             # CRC-16
+[crchack]$ ./crchack -c -w16 -p8005 -rR msg                             # CRC-16
 bb3d
-[crchack]$ ./crchack -c -w16 -p8005 -iffff -rR msg                  # MODBUS
+[crchack]$ ./crchack -c -w16 -p8005 -iffff -rR msg                      # MODBUS
 4b37
-[crchack]$ ./crchack -c -w32 -p04c11db7 -iffffffff -xffffffff -rR   # CRC-32
+[crchack]$ ./crchack -c -w32 -p04c11db7 -iffffffff -xffffffff -rR msg   # CRC-32
 cbf43926
 ```
 

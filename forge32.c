@@ -134,11 +134,18 @@ int forge32(const u8 *msg, size_t length,
         u8 *out)
 {
     u32 *AT, Hm, inverseT[32], d, x;
-    int i, row_permutation[32];
+    int i, ret, *row_permutation;
+    AT = NULL;
+    row_permutation = NULL;
+    ret = 0;
+
+    /* Row permutation array. */
+    if (!(row_permutation = malloc(bits_size*sizeof(int))))
+        goto finish;
 
     /* Initialize matrix AT (transpose of A). */
     if (!(AT = malloc(bits_size*sizeof(u32))))
-        return 0;
+        goto finish;
 
     memcpy(out, msg, length);
     Hm = H(out, length);
@@ -149,10 +156,8 @@ int forge32(const u8 *msg, size_t length,
     }
 
     /* Find a non-singular submatrix of size 32x32 and invert it. */
-    if (!find_inverse32(AT, bits_size, inverseT, row_permutation)) {
-        free(AT);
-        return 0;
-    }
+    if (!find_inverse32(AT, bits_size, inverseT, row_permutation))
+        goto finish;
 
     /* x = inv(A) * d. */
     d = desired_checksum ^ Hm;
@@ -170,7 +175,14 @@ int forge32(const u8 *msg, size_t length,
         }
     }
 
-    free(AT);
-    return 1;
+    ret = 1;
+finish:
+    if (row_permutation) {
+        free(row_permutation);
+    }
+    if (AT) {
+        free(AT);
+    }
+    return ret;
 }
 #undef INVERT_BIT
