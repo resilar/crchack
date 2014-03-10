@@ -103,13 +103,14 @@ algorithms] [2].
 # How it works?
 
 CRC is often described as a linear function in the literature. However, CRC
-implemations used in practice often differ from the theoretical definition and
-satisfy only a "weaker" linear property:
+implementations used in practice often differ from the theoretical definition
+and satisfy only a "weaker" linear property:
 
     CRC(x ^ y ^ z) = CRC(x) ^ CRC(y) ^ CRC(z), for |x| = |y| = |z|
 
 The method can be viewed as applying this rule repeatedly to produce an
-invertible system of linear equations.
+invertible system of linear equations. Solving the system tells us which bits in
+the input data need to be modified.
 
 The intuition is that inverting each input bit causes a fixed difference in the
 resulting checksum (independent of the values of the neighbouring bits). This,
