@@ -4,14 +4,14 @@ void crc(const u8 *msg, size_t length, struct crc_params *config,
         struct bigint *out)
 {
     size_t i;
+    static u8 *bit;
     static u8 bit_table[8] = { /* Bytes processed from MSB to LSB. */
         0x80, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01
     };
-    static u8 reflected_bit_table[8] = { /* LSB to MSB. */
+    static u8 bit_table_reflected[8] = { /* LSB to MSB. */
         0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80
     };
-    static u8 *bit;
-    bit = config->reflect_in ? reflected_bit_table : bit_table;
+    bit = (config->reflect_in) ? bit_table_reflected : bit_table;
 
     /* Read first config->width bits to the CRC register (out). */
     bigint_load_zeros(out);

@@ -1,6 +1,8 @@
 #ifndef CRC_H
 #define CRC_H
 
+#include <stddef.h>
+
 #include "crchack.h"
 #include "bigint.h"
 

@@ -1,7 +1,7 @@
-**crchack** is a free tool that forces CRC checksum of a file to any given value
-by modifying chosen input bits. The main advantage over existing CRC alteration
-tools is the ability to obtain the target checksum by changing non-contiguous
-bits of the input message. crchack supports all commonly used CRC algorithms.
+**crchack** is a public domain tool to force CRC checksums to arbitrary values.
+The main advantage over existing CRC alteration tools is the ability to obtain
+the desired checksum by changing non-contigous input bits. crchack supports all
+commonly used CRC algorithms as well as custom parameters.
 
 - [Usage](#usage)
 - [Supported CRC algorithms](#supported-crc-algorithms)
@@ -11,44 +11,49 @@ bits of the input message. crchack supports all commonly used CRC algorithms.
 
 # Usage
 
-<pre>
-usage: ./crchack [options] desired_checksum [file]
+```
+usage: ./crchack [options] file [new_checksum]
 
 options:
-  -c       write CRC checksum to stdout and exit
   -o pos   starting bit offset of the mutable input bits
   -O pos   offset from the end of the input message
   -b file  read bit offsets from a file
   -h       show this help
 
-CRC options (CRC-32 if none given):
-  -w size  register size in bits   -x xor   final register XOR mask
-  -p poly  generator polynomial    -r       reverse input bits
-  -i init  initial register        -R       reverse final register
-</pre>
+CRC options (default: CRC-32):
+  -w size  register size in bits   -r       reverse input bits
+  -p poly  generator polynomial    -R       reverse final register
+  -i init  initial register        -x xor   final register XOR mask
+```
 
-The input message is read from *file* (or stdin if not given) and the updated
-message is written to stdout. By default, crchack appends 4 bytes to the input
-producing a new message that has the desired CRC-32 checksum value. Other CRC
-algorithms can be specified via the CRC options. crchack can also be used to
-calculate CRC checksums by setting the switch ``-c`` and leaving out the
-*desired_checksum* argument.
+The input message is read from *file* and the adjusted message is written to
+stdout. By default, crchack appends 4 bytes to the input producing a new message
+that has the specified new CRC-32 checksum. Other CRC algorithms can be defined
+via the CRC options. If *new_checksum* is not given, then crchack writes the CRC
+checksum of the input message to stdout and exits.
 
-## Example
+
+## Examples
 
 ```
-[crchack]$ echo -ne "hello" > test
-[crchack]$ ./crchack -c test
-3610a686
-[crchack]$ ./crchack deff1420 test > test2
-[crchack]$ ./crchack -c test2
+[crchack]% echo "hello" > foo
+[crchack]% ./crchack foo 
+363a3020
+[crchack]% ./crchack foo deff1420 > bar
+[crchack]% ./crchack bar
 deff1420
-[crchack]$ hexdump -C test2
-00000000  68 65 6c 6c 6f 5b a1 1d  f6                       |hello[...|
-00000009
+[crchack]% xxd bar
+00000000: 6865 6c6c 6f0a fd37 37f6                 hello..77.
+```
+
+```
+[crchack]% echo "foobar" | ./crchack - 1337C0DE | ./crchack -
+1337c0de
 ```
 
 ## Bits file format
+
+**Warning** This is going to change in the future (to something that sucks less)
 
 In order to modify non-consecutive input message bits, the bit positions need to
 be defined in an external file referred to as *the bits file* (passed in via the
@@ -84,14 +89,14 @@ CRC functions can be specified by passing the CRC parameters via command-line
 arguments.
 
 ```
-[crchack]$ echo -ne "123456789" > msg
-[crchack]$ ./crchack -c -w8 -p7 msg                                     # CRC-8
+[crchack]$ printf "123456789" > msg
+[crchack]$ ./crchack -w8 -p7 msg                                     # CRC-8
 f4
-[crchack]$ ./crchack -c -w16 -p8005 -rR msg                             # CRC-16
+[crchack]$ ./crchack -w16 -p8005 -rR msg                             # CRC-16
 bb3d
-[crchack]$ ./crchack -c -w16 -p8005 -iffff -rR msg                      # MODBUS
+[crchack]$ ./crchack -w16 -p8005 -iffff -rR msg                      # MODBUS
 4b37
-[crchack]$ ./crchack -c -w32 -p04c11db7 -iffffffff -xffffffff -rR msg   # CRC-32
+[crchack]$ ./crchack -w32 -p04c11db7 -iffffffff -xffffffff -rR msg   # CRC-32
 cbf43926
 ```
 
@@ -123,8 +128,6 @@ Note that the CRC function is treated as a "black box", i.e., the internal
 parameters of the CRC are not needed (except for evaluation). In fact, the same
 approach is applicable to all checksum functions that satisfy the weak linearity
 property.
-
-For more details, see the file [forge32.c](forge32.c).
 
 
 # Use cases

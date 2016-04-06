@@ -1,7 +1,5 @@
-RM = rm -f
-CC = gcc
-CFLAGS = -O2 -Wall -std=c99 -pedantic
-LDFLAGS =
+CFLAGS ?= -g -Wall -std=c99 -pedantic
+LDFLAGS ?=
 
 EXEC = crchack
 SRCS = crchack.c bigint.c crc.c forge.c
