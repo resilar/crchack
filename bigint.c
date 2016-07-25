@@ -4,7 +4,7 @@ void bigint_fprint(FILE *stream, const struct bigint *dest)
 {
     size_t i;
 
-    /* Iterate nibbles. The most significant nibble first. */
+    /* Iterate nibbles. The most significant nibble first */
     i = (dest->bits-1) / 4;
     do {
         unsigned char nibble;
@@ -36,22 +36,16 @@ int bigint_from_string(struct bigint *dest, const char *hex_string)
     }
 
     /* Calculate length in bits (exclude leading zeros) */
-    bits = length*4;
     for (i = 0; i < length-1 && hex_string[i] == '0'; i++);
-    bits -= i * 4;
+    bits = (length-i)*4;
     bits -= (hex_string[i] < '8') + (hex_string[i] < '4') /* trollface.jpg */
           + (hex_string[i] < '2') + (hex_string[i] < '1');
-    if (bits > dest->bits) {
-        /* Too big */
-        return 0;
-    }
+    if (bits > dest->bits) return 0; /* Too big */
 
     /* Convert */
     bigint_load_zeros(dest);
     for (read = 0; read < bits; read += 4) {
-        char c;
-
-        c = hex_string[length-1 - read/4];
+        char c = hex_string[length-1 - read/4];
         if (c >= '0' && c <= '9') {
             dest->buf[read/WORD_BIT] |= (c - '0') << (read % WORD_BIT);
         } else if (c >= 'A' && c <= 'F') {
@@ -100,20 +94,28 @@ void bigint_shr_1(struct bigint *dest)
 
 void bigint_reflect(struct bigint *dest)
 {
-    struct bigint tmp;
-    size_t i;
-
-    if (!bigint_init(&tmp, dest->bits))
-        return; /* dest->bits <= 0 */
-    bigint_mov(&tmp, dest);
-    bigint_load_zeros(dest);
-
-    for (i = 0; i < dest->bits; i++) {
-        bigint_shl_1(dest);
-        if (bigint_lsb(&tmp))
-            bigint_set_lsb(dest);
-        bigint_shr_1(&tmp);
+    struct bigint acc;
+    if (bigint_init(&acc, dest->bits)) {
+        size_t i;
+        bigint_mov(&acc, dest);
+        bigint_load_zeros(dest);
+        for (i = 0; i < dest->bits; i++) {
+            bigint_shl_1(dest);
+            if (bigint_lsb(&acc))
+                bigint_set_lsb(dest);
+            bigint_shr_1(&acc);
+        }
+        bigint_destroy(&acc);
     }
+}
 
-    bigint_destroy(&tmp);
+size_t bigint_popcount(struct bigint *dest)
+{
+    size_t ret, i;
+    ret = 0;
+    for (i = 0; i < dest->bits; i++) {
+        if (bigint_get_bit(dest, i))
+            ret++;
+    }
+    return ret;
 }

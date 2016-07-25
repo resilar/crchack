@@ -7,12 +7,12 @@
 #include "bigint.h"
 
 struct crc_params {
-    int width;             /* Width of the CRC register in bits. */
-    struct bigint poly;    /* Generator polynomial. */
-    struct bigint init;    /* Initial CRC register value. */
-    struct bigint xor_out; /* Value to be XORed with the final CRC value. */
-    int reflect_in;        /* Reverse input bits (LSB-first instead of MSB). */
-    int reflect_out;       /* Reverse the final CRC value bits. */
+    int width;             /* Width of the CRC register in bits */
+    struct bigint poly;    /* Generator polynomial */
+    struct bigint init;    /* Initial CRC register value */
+    struct bigint xor_out; /* Final CRC register XOR mask */
+    int reflect_in;        /* Reverse input bits (LSB first instead of MSB) */
+    int reflect_out;       /* Reverse the final CRC register bits */
 };
 
 /**

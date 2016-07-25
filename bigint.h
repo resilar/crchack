@@ -1,19 +1,14 @@
 /**
- * A crude arbitrary precision integer routines for crchack.
+ * Big integers for crchack.
  */
-
 #ifndef BIGINT_H
 #define BIGINT_H
 
 #include <assert.h>
 #include <memory.h>
-#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-
-#include "crchack.h"
 
 typedef uint32_t word;
 #define WORD_BIT (sizeof(word)*8)
@@ -28,7 +23,7 @@ struct bigint {
  */
 static inline size_t bigint_sizeof(const struct bigint *dest)
 {
-    return 1 + (dest->bits-1)/8; /* ceil(). */
+    return 1 + (dest->bits-1)/8; /* ceil() */
 }
 
 static inline size_t bigint_words(const struct bigint *dest)
@@ -48,8 +43,10 @@ static inline struct bigint *bigint_init(struct bigint *dest, size_t bits)
 
 static inline void bigint_destroy(struct bigint *dest)
 {
-    free(dest->buf);
-    dest->buf = NULL;
+    if (dest) {
+        free(dest->buf);
+        dest->buf = NULL;
+    }
 }
 
 /**
@@ -191,5 +188,10 @@ void bigint_shr_1(struct bigint *dest);
  * Reverse the bits in bigint.
  */
 void bigint_reflect(struct bigint *dest);
+
+/**
+ * Population count (Hamming weight of bits).
+ */
+size_t bigint_popcount(struct bigint *dest);
 
 #endif

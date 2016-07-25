@@ -20,18 +20,19 @@
  * the bits within a byte are numbered from the LSB to MSB (e.g., the index 10
  * corresponds to the third least significant bit of the second byte).
  *
- * The output buffer 'out' receives the modified input message such that
- * "H(out, length) == desired_checksum" is true upon a successful return.
- * Therefore, the 'out' buffer must have at least 'length' bytes of space.
+ * The output buffer 'buf' receives the modified input message such that
+ * `H(buf, length) == checksum` is true upon a successful return. Therefore,
+ * the buffer must have at least 'length' bytes of space.
  *
- * On success, the return value is non-zero and 'out' is filled with a message
- * that has a checksum equal to 'desired_checksum'. The function returns zero
- * if a memory allocation error occurs or if the forgery is not possible (in
- * this case, either 'H' is non-linear or more mutable bits are needed).
+ * On success, the return value is the number of bits that have been flipped in
+ * the modified message 'buf' in order to obtain the desired checksum (indices
+ * of the flipped bits are moved to the beginning of the 'bits' array). A return
+ * value less than '-checksum->bits' indicates a memory allocation error, while
+ * larger values represent the number of additional mutable bits needed to make
+ * the forging successful (assuming 'H' is a valid weak-linear function).
  */
 int forge(const u8 *msg, size_t length,
         void (*H)(const u8 *msg, size_t length, struct bigint *out),
-        struct bigint *desired_checksum, size_t bits[], int bits_size,
-        u8 *out);
+        struct bigint *checksum, size_t bits[], int bits_size, u8 *buf);
 
 #endif
