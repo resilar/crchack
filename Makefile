@@ -1,15 +1,10 @@
-CFLAGS ?= -g -Wall -std=c99 -pedantic
-LDFLAGS ?=
+CFLAGS += -Wall -std=c99 -pedantic
+LDFLAGS +=
 
-EXEC = crchack
-SRCS = crchack.c bigint.c crc.c forge.c
-OBJS := $(SRCS:.c=.o)
+all: crchack
 
-all: $(SRCS) $(EXEC)
-
-$(EXEC): $(OBJS)
+crchack: crchack.o bigint.o crc.o forge.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
-.PHONY: clean
 clean:
-	$(RM) *.o
+	$(RM) crchack *.o
