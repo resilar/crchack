@@ -31,10 +31,8 @@ void crc(const u8 *msg, size_t length, struct crc_params *config,
         int bit_set = bigint_msb(out);
 
         bigint_shl_1(out);
-        if (i/8 < length) {
-            if (msg[i/8] & bit[i%8])
-                bigint_set_lsb(out);
-        }
+        if (i/8 < length && msg[i/8] & bit[i%8])
+            bigint_set_lsb(out);
 
         if (bit_set) bigint_xor(out, &config->poly);
     }

@@ -241,6 +241,7 @@ static int handle_options(int argc, char *argv[])
         nbits += bits_of_slice(&input.slices[i], input.len * 8, NULL);
     }
 
+    /* Fill input.bits */
     if (nbits) {
         /* Read bit indices from '-bB' slices */
         if (!(input.bits = calloc(nbits, sizeof(size_t)))) {
@@ -293,8 +294,11 @@ static const char *parse_factor(const char *p, ssize_t *value)
         if (p[0] == '0' && p[1] == 'x') {
             sscanf(p, "0x%zx", (size_t *)value);
             p += 2;
-        } else sscanf(p, "%zd", value);
-        while (*p >= '0' && *p <= '9') p++;
+            while (strchr("0123456789abcdefABCDEF", *p)) p++;
+        } else {
+            sscanf(p, "%zd", value);
+            while (*p >= '0' && *p <= '9') p++;
+        }
         break;
     case '(':
         if ((p = parse_expression(p+1, value))) {
@@ -386,6 +390,7 @@ static int parse_offset(const char *p, ssize_t *offset)
 static int parse_slice(const char *p, struct slice *slice)
 {
     slice->s = 1;
+    slice->l = 0;
 
     /* L:r:s */
     if (!peek(&p) || (*p != ':' && !(p = parse_slice_offset(p, &slice->l))))
@@ -412,6 +417,11 @@ static int parse_slice(const char *p, struct slice *slice)
     return 1;
 }
 
+/**
+ * Extract bits of a slice.
+ *
+ * Returns the number of bits in the given slice.
+ */
 static size_t bits_of_slice(struct slice *slice, size_t end, size_t *bits)
 {
     size_t n = 0;
@@ -512,7 +522,7 @@ int main(int argc, char *argv[])
         if (input.bits[i] > input.bits[j])
             j = i;
     }
-    if (input.bits[j] >= input.len*8) {
+    if (input.nbits && input.bits[j] >= input.len*8) {
         u8 *new;
         int pad_size = 1 + (input.bits[j] - input.len*8) / 8;
         if (!(new = realloc(input.msg, input.len + pad_size))) {

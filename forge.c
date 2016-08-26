@@ -95,7 +95,7 @@ int forge(const u8 *msg, size_t length,
     /* Adjust the input message */
     if (i >= width) {
         ret = 0;
-        for (i = 0; i < bits_size; i++) {
+        for (i = 0; i < width; i++) {
             if (bigint_get_bit(&x, i)) {
                 FLIP_BIT(buf, bits[i]);
                 if (ret != i) {
