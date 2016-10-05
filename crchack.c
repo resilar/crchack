@@ -23,7 +23,6 @@ static void help(char *argv0)
          "  -o pos    byte.bit offset of mutable input bits\n"
          "  -O pos    offset from the end of the input\n"
          "  -b l:r:s  specify bits at offsets l..r with a step s\n"
-         "  -B l:r:s  bits from the end of the input\n"
          "  -h        show this help\n"
          "  -v        verbose mode\n"
          "\n"
@@ -93,7 +92,7 @@ static int handle_options(int argc, char *argv[])
     reflect_in = reflect_out = 0;
 
     /* Parse command options */
-    while ((c = getopt(argc, argv, "o:O:b:B:hvw:p:i:x:rR")) != -1) {
+    while ((c = getopt(argc, argv, "o:O:b:hvw:p:i:x:rR")) != -1) {
         switch (c) {
         case 'o': case 'O':
             if (has_offset) {
@@ -106,7 +105,7 @@ static int handle_options(int argc, char *argv[])
             }
             has_offset = c;
             break;
-        case 'b': case 'B': {
+        case 'b': {
             struct slice *new;
             new = realloc(input.slices, ++input.nslices * sizeof(struct slice));
             if (!new) {
@@ -231,7 +230,7 @@ static int handle_options(int argc, char *argv[])
         input.has_checksum = 1;
     } else {
         if (has_offset) fprintf(stderr, "flags -oO ignored\n");
-        if (input.slices) fprintf(stderr, "flags -bB ignored\n");
+        if (input.slices) fprintf(stderr, "flag -b ignored\n");
         return 0;
     }
 
@@ -243,7 +242,7 @@ static int handle_options(int argc, char *argv[])
 
     /* Fill input.bits */
     if (nbits) {
-        /* Read bit indices from '-bB' slices */
+        /* Read bit indices from '-b' slices */
         if (!(input.bits = calloc(nbits, sizeof(size_t)))) {
             fprintf(stderr, "allocating bits array failed\n");
             return 4;
@@ -277,7 +276,7 @@ static int handle_options(int argc, char *argv[])
 }
 
 /**
- * Recursive descent parser for slices (-bB).
+ * Recursive descent parser for slices (-b).
  */
 static const char peek(const char **pp)
 {
@@ -550,6 +549,24 @@ int main(int argc, char *argv[])
     /* Forge */
     ret = forge(input.msg, input.len, crc_checksum, &input.checksum,
             input.bits, input.nbits, out);
+
+    /* Show flipped bits */
+    if (input.verbose >= 1) {
+        for (i = 0; i < ret; i++) {
+            for (j = i; j < ret; j++) {
+                if (input.bits[j] < input.bits[i]) {
+                    size_t tmp = input.bits[i];
+                    input.bits[i] = input.bits[j];
+                    input.bits[j] = tmp;
+                }
+            }
+        }
+        fprintf(stderr, "flip[%d] = {", ret);
+        for (i = 0; i < ret; i++)
+            fprintf(stderr, &", %zu.%zu"[!i], input.bits[i]/8, input.bits[i]%8);
+        fprintf(stderr, " }\n");
+    }
+
     if (ret >= 0) {
         /* Write the result to stdout */
         u8 *ptr = &out[0];
@@ -570,23 +587,6 @@ int main(int argc, char *argv[])
                 -ret, input.nbits);
         exit_code = 6;
         goto finish;
-    }
-
-    /* Show flipped bits */
-    if (input.verbose >= 1) {
-        for (i = 0; i < ret; i++) {
-            for (j = i; j < ret; j++) {
-                if (input.bits[j] < input.bits[i]) {
-                    size_t tmp = input.bits[i];
-                    input.bits[i] = input.bits[j];
-                    input.bits[j] = tmp;
-                }
-            }
-        }
-        fprintf(stderr, "flip[%d] = {", ret);
-        for (i = 0; i < ret; i++)
-            fprintf(stderr, &", %zu.%zu"[!i], input.bits[i]/8, input.bits[i]%8);
-        fprintf(stderr, " }\n");
     }
 
     /* Success! */

@@ -19,7 +19,6 @@ options:
   -o pos    byte.bit offset of mutable input bits
   -O pos    offset from the end of the input
   -b l:r:s  specify bits at offsets l..r with a step s
-  -B l:r:s  bits from the end of the input
   -h        show this help
   -v        verbose mode
 
@@ -57,11 +56,11 @@ deadbeef
 PING 1234
 ```
 
-In order to modify non-consecutive input message bits, the bit positions need to
-be specified with the `-b` and `-B` switches. The argument for `-bB` is a
-Python-style *slice* in format `start:end:step`, representing bits between the
-positions `start` and `end` (exclusive) with successive bits `step` bits apart.
-By default, `start` is the beginning of the message, `end` is the end of the
+In order to modify non-consecutive input message bits, the bit positions need
+to be specified with the `-b` switches. The argument for `-b` is a Python-style
+*slice* in format `start:end:step`, representing bits between the positions
+`start` and `end` (exclusive) with successive bits `step` bits apart. By
+default, `start` is the beginning of the message, `end` is the end of the
 message, and `step` equals to 1 bit. For example, `-b 4:` selects all bits
 starting from the *byte* index 4, that is, the 32nd and subsequent bits of the
 input. However, `-b 4` without a colon selects only the 32nd bit.
@@ -85,7 +84,7 @@ includes an expression parser that supports basic arithmetic operations.
 ```
 [crchack]% echo "aXbXXcXd" | ./crchack -b1:2 -b3:5 -b6:7 - cafebabe | xxd
 00000000: 61d6 6298 f763 4d64 0a                   a.b..cMd.
-[crchack]% echo "a\xD6b\x98\xF7c\x4Dd" | ./crchack -
+[crchack]% echo -e "a\xD6b\x98\xF7c\x4Dd" | ./crchack -
 cafebabe
 
 [crchack]% python -c 'print("A"*32)' | ./crchack -b "0.5:0.5+8*32:.8" - 1337c0de
