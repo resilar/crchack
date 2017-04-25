@@ -30,7 +30,6 @@ static void help(char *argv0)
          "  -w size   register size in bits   -p poly   generator polynomial\n"
          "  -i init   initial register value  -x xor    final register XOR mask\n"
          "  -r        reverse input bits      -R        reverse final register\n");
-
 }
 
 /**
