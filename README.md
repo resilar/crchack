@@ -123,9 +123,9 @@ bb3d
 cbf43926
 ```
 
-[CRC RevEng] [1] (by Greg Cook) includes a comprehensive list of cyclic
-redundancy check algorithms and their parameters: [Catalogue of parametrised CRC
-algorithms] [2].
+[CRC RevEng](http://reveng.sourceforge.net/) (by Greg Cook) includes a
+comprehensive list of cyclic redundancy check algorithms and their parameters:
+[CRC catalogue](http://reveng.sourceforge.net/crc-catalogue/).
 
 
 # How it works?
@@ -163,7 +163,3 @@ formats and standards that utilize CRCs. Hacking these may involve, e.g.,
 modification of data so that the original CRC checksum remains intact. One
 interesting possibility is the ability to store arbitrary data (e.g., binary
 code) to checksum fields in packet and file headers.
-
-
-  [1]: http://reveng.sourceforge.net/ "CRC RevEng"
-  [2]: http://reveng.sourceforge.net/crc-catalogue/ "CRC catalogue"
