@@ -22,7 +22,7 @@ static void help(char *argv0)
          "options:\n"
          "  -o pos    byte.bit offset of mutable input bits\n"
          "  -O pos    offset from the end of the input\n"
-         "  -b l:r:s  specify bits at offsets l..r with a step s\n"
+         "  -b l:r:s  specify bits at offsets l..r with step s\n"
          "  -h        show this help\n"
          "  -v        verbose mode\n"
          "\n"
@@ -582,7 +582,7 @@ int main(int argc, char *argv[])
         }
         fflush(stdout);
     } else {
-        fprintf(stderr, "FAIL! try giving %d more mutable bits (got %zu)\n",
+        fprintf(stderr, "FAIL! try giving %d mutable bits more (got %zu)\n",
                 -ret, input.nbits);
         exit_code = 6;
         goto finish;

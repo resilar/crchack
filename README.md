@@ -1,10 +1,10 @@
-**crchack** is a public domain tool to force CRC checksums to arbitrary values.
-The main advantage over existing CRC alteration tools is the ability to obtain
-the desired checksum by changing non-contiguous input bits. crchack supports all
-commonly used CRC algorithms as well as custom parameters.
+**crchack** is a public domain tool to force CRC checksums to arbitrarily chosen
+values. The main advantage over existing CRC alteration tools is the ability to
+obtain the desired checksum by changing non-contiguous input bits. crchack
+supports all commonly used CRC algorithms as well as custom parameters.
 
 - [Usage](#usage)
-- [Examples](#exampples)
+- [Examples](#examples)
 - [CRC algorithms](#crc-algorithms)
 - [How it works?](#how-it-works)
 - [Use cases](#use-cases)
@@ -18,7 +18,7 @@ usage: ./crchack [options] file [new_checksum]
 options:
   -o pos    byte.bit offset of mutable input bits
   -O pos    offset from the end of the input
-  -b l:r:s  specify bits at offsets l..r with a step s
+  -b l:r:s  specify bits at offsets l..r with step s
   -h        show this help
   -v        verbose mode
 
@@ -56,14 +56,14 @@ deadbeef
 PING 1234
 ```
 
-In order to modify non-consecutive input message bits, the bit positions need
-to be specified with the `-b` switches. The argument for `-b` is a Python-style
-*slice* in format `start:end:step`, representing bits between the positions
-`start` and `end` (exclusive) with successive bits `step` bits apart. By
-default, `start` is the beginning of the message, `end` is the end of the
-message, and `step` equals to 1 bit. For example, `-b 4:` selects all bits
-starting from the *byte* index 4, that is, the 32nd and subsequent bits of the
-input. However, `-b 4` without a colon selects only the 32nd bit.
+In order to modify non-consecutive input message bits, the modifiable bits need
+to be specified with `-b start:end:step` switches, where the argument is a
+Python-style *slice* representing the bits between the positions `start` and
+`end` (exclusive) with successive bits `step` bits apart. By default, `start` is
+the beginning of the message, `end` is the end of the message, and `step` equals
+to 1 bit. For example, `-b 4:` selects all bits starting from the *byte* offset
+4 (note that `-b 4` without the colon selects only the 32nd bit). Negative
+offsets are from the end of the input.
 
 ```
 [crchack]% echo "1234PQPQ" | ./crchack -b 4: - 12345678
@@ -75,11 +75,11 @@ _MLPPQPQ
 12345678
 ```
 
-The byte index can be followed by a dot `.` and a *bit* index so that, e.g.,
-`-b0.32`, `-b2.16` and `-b4.0` select the 32nd bit. Bits within a byte are
-numbered from 0 (least significant bit) to 7 (most significant bit). Negative
-indices are from the end of the input message. Finally, notice that the crchack
-includes an expression parser that supports basic arithmetic operations.
+The byte offset is optionally followed by a dot-separated *bit* offset so that,
+e.g., `-b0.32`, `-b2.16` and `-b4.0` select the 32nd bit. Bits within a byte are
+numbered from 0 (least significant bit) to 7 (most significant bit). Finally,
+`0x`-prefixed hexadecimal numbers as well as basic arithmetic operations `+-*/`
+are supported by the built-in expression parser.
 
 ```
 [crchack]% echo "aXbXXcXd" | ./crchack -b1:2 -b3:5 -b6:7 - cafebabe | xxd
@@ -87,7 +87,7 @@ includes an expression parser that supports basic arithmetic operations.
 [crchack]% echo -e "a\xD6b\x98\xF7c\x4Dd" | ./crchack -
 cafebabe
 
-[crchack]% python -c 'print("A"*32)' | ./crchack -b "0.5:0.5+8*32:.8" - 1337c0de
+[crchack]% python -c 'print("A"*0x20)' | ./crchack -b "0.5:0.5+8*0x20:.8" - 1337c0de
 AAAaAaaaaaAAAaAaAaAaAaaAaAaaAAaA
 [crchack]% echo "AAAaAaaaaaAAAaAaAaAaAaaAaAaaAAaA" | ./crchack -
 1337c0de
@@ -98,10 +98,9 @@ AAAaAaaaaaAAAaAaAaAaAaaAaAaaAAaA
 baadf00d
 ```
 
-In general, the user should provide **at least** *w* bits where *w* is the width
-of the CRC register, e.g., 32 for CRC-32. Obtaining the desired checksum is
-impossible if an insufficient number of mutable bits is given. In practice, a
-few bits more than *w* tends to be enough if the bits are non-contiguous.
+Obtaining the target checksum is impossible given an insufficient number of
+mutable bits. In general, the user should provide at least *w* bits where *w* is
+the width of the CRC register, e.g., 32 bits for CRC-32.
 
 
 # CRC algorithms
@@ -124,8 +123,8 @@ cbf43926
 ```
 
 [CRC RevEng](http://reveng.sourceforge.net/) (by Greg Cook) includes a
-comprehensive list of cyclic redundancy check algorithms and their parameters:
-[CRC catalogue](http://reveng.sourceforge.net/crc-catalogue/).
+comprehensive [catalogue](http://reveng.sourceforge.net/crc-catalogue/) of
+cyclic redundancy check algorithms and their parameters.
 
 
 # How it works?
@@ -138,14 +137,14 @@ and satisfy only a "weaker" linear property:
 
 The method can be viewed as applying this rule repeatedly to produce an
 invertible system of linear equations. Solving the system tells us which bits in
-the input data need to be modified.
+the input data need to be flipped.
 
 The intuition is that flipping each input bit causes a fixed difference in the
 resulting checksum (independent of the values of the neighbouring bits). This,
 in addition to knowing the required difference, gives a system of linear
 equations over GF(2). The system of equations can then be expressed in a matrix
 form and solved with, e.g., the Gauss-Jordan elimination algorithm. Under- and
-overdetermined systems need special handling.
+overdetermined systems require special handling.
 
 Note that the CRC function is treated as a "black box", i.e., the internal
 parameters of the CRC are not needed except for evaluation. In fact, the same
