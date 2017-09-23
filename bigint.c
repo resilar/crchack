@@ -1,4 +1,5 @@
 #include "bigint.h"
+#include <string.h>
 
 void bigint_fprint(FILE *stream, const struct bigint *dest)
 {

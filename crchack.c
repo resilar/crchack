@@ -1,12 +1,13 @@
 #include "crchack.h"
 
 #include <ctype.h>
-#include <unistd.h>
 #include <getopt.h>
 #include <limits.h>
+#define __USE_MINGW_ANSI_STDIO 1 /* make MinGW happy */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "bigint.h"
 #include "crc.h"
