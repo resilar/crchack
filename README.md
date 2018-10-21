@@ -38,21 +38,21 @@ checksum of the input message to stdout and exits.
 # Examples
 
 ```
-[crchack]% echo "hello" > foo
-[crchack]% ./crchack foo
+[crchack]$ echo "hello" > foo
+[crchack]$ ./crchack foo
 363a3020
-[crchack]% ./crchack foo deff1420 > bar
-[crchack]% ./crchack bar
+[crchack]$ ./crchack foo deff1420 > bar
+[crchack]$ ./crchack bar
 deff1420
-[crchack]% xxd bar
+[crchack]$ xxd bar
 00000000: 6865 6c6c 6f0a fd37 37f6                 hello..77.
 
-[crchack]% echo "foobar" | ./crchack - DEADBEEF | ./crchack -
+[crchack]$ echo "foobar" | ./crchack - DEADBEEF | ./crchack -
 deadbeef
 
-[crchack]% echo "PING 1234" | ./crchack -
+[crchack]$ echo "PING 1234" | ./crchack -
 29092540
-[crchack]% echo "PING XXXX" | ./crchack -o5 - 29092540
+[crchack]$ echo "PING XXXX" | ./crchack -o5 - 29092540
 PING 1234
 ```
 
@@ -66,11 +66,11 @@ to 1 bit. For example, `-b 4:` selects all bits starting from the *byte* offset
 offsets are from the end of the input.
 
 ```
-[crchack]% echo "1234PQPQ" | ./crchack -b 4: - 12345678
+[crchack]$ echo "1234PQPQ" | ./crchack -b 4: - 12345678
 1234u>|7
-[crchack]% echo "1234PQPQ" | ./crchack -b :4 - 12345678
+[crchack]$ echo "1234PQPQ" | ./crchack -b :4 - 12345678
 _MLPPQPQ
-[crchack]% echo "1234u>|7" | ./crchack - && echo "_MLPPQPQ" | ./crchack -
+[crchack]$ echo "1234u>|7" | ./crchack - && echo "_MLPPQPQ" | ./crchack -
 12345678
 12345678
 ```
@@ -82,19 +82,19 @@ numbered from 0 (least significant bit) to 7 (most significant bit). Finally,
 are supported by the built-in expression parser.
 
 ```
-[crchack]% echo "aXbXXcXd" | ./crchack -b1:2 -b3:5 -b6:7 - cafebabe | xxd
+[crchack]$ echo "aXbXXcXd" | ./crchack -b1:2 -b3:5 -b6:7 - cafebabe | xxd
 00000000: 61d6 6298 f763 4d64 0a                   a.b..cMd.
-[crchack]% echo -e "a\xD6b\x98\xF7c\x4Dd" | ./crchack -
+[crchack]$ echo -e "a\xD6b\x98\xF7c\x4Dd" | ./crchack -
 cafebabe
 
-[crchack]% python -c 'print("A"*0x20)' | ./crchack -b "0.5:0.5+8*0x20:.8" - 1337c0de
+[crchack]$ python -c 'print("A"*0x20)' | ./crchack -b "0.5:0.5+8*0x20:.8" - 1337c0de
 AAAaAaaaaaAAAaAaAaAaAaaAaAaaAAaA
-[crchack]% echo "AAAaAaaaaaAAAaAaAaAaAaaAaAaaAAaA" | ./crchack -
+[crchack]$ echo "AAAaAaaaaaAAAaAaAaAaAaaAaAaaAAaA" | ./crchack -
 1337c0de
 
-[crchack]% echo "1234567654321" | ./crchack -b .0:-1:1 -b .1:-1:1 -b .2:-1:1 - baadf00d
+[crchack]$ echo "1234567654321" | ./crchack -b .0:-1:1 -b .1:-1:1 -b .2:-1:1 - baadf00d
 0713715377223
-[crchack]% echo "0713715377223" | ./crchack -
+[crchack]$ echo "0713715377223" | ./crchack -
 baadf00d
 ```
 
