@@ -531,7 +531,7 @@ int main(int argc, char *argv[])
         }
         input.msg = new;
 
-        memset(&input.msg[input.len+i], 0, pad_size);
+        memset(&input.msg[input.len], 0, pad_size);
         input.len += pad_size;
 
         if (input.verbose >= 1) {
