@@ -25,7 +25,7 @@ options:
 CRC parameters (default: CRC-32):
   -w size   register size in bits   -p poly   generator polynomial
   -i init   initial register value  -x xor    final register XOR mask
-  -r        reverse input bits      -R        reverse final register
+  -r        reverse input bytes     -R        reverse final register
 ```
 
 The input message is read from *file* and the adjusted message is written to

@@ -31,8 +31,8 @@
  * larger values represent the number of additional mutable bits needed to make
  * the forging successful (assuming 'H' is a valid weak-linear function).
  */
-int forge(const u8 *msg, size_t length,
-        void (*H)(const u8 *msg, size_t length, struct bigint *out),
-        struct bigint *checksum, size_t bits[], int bits_size, u8 *buf);
+int forge(const u8 *msg, size_t length, const struct bigint *checksum,
+          void (*H)(const u8 *msg, size_t length, struct bigint *out),
+          size_t bits[], size_t bits_size, u8 *buf);
 
 #endif

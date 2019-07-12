@@ -30,7 +30,7 @@ static void help(char *argv0)
          "CRC parameters (default: CRC-32):\n"
          "  -w size   register size in bits   -p poly   generator polynomial\n"
          "  -i init   initial register value  -x xor    final register XOR mask\n"
-         "  -r        reverse input bits      -R        reverse final register\n");
+         "  -r        reverse input bytes     -R        reverse final register\n");
 }
 
 /**
@@ -547,7 +547,7 @@ int main(int argc, char *argv[])
     }
 
     /* Forge */
-    ret = forge(input.msg, input.len, crc_checksum, &input.checksum,
+    ret = forge(input.msg, input.len, &input.checksum, crc_checksum,
             input.bits, input.nbits, out);
 
     /* Show flipped bits */
