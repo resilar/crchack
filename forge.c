@@ -5,31 +5,35 @@ int forge(const u8 *msg, size_t length, const struct bigint *checksum,
           void (*H)(const u8 *msg, size_t length, struct bigint *out),
           size_t bits[], size_t bits_size, u8 *buf)
 {
+    int i, j, p, ret;
     struct bigint *AT, Hmsg, x, d, acc, mask;
-    size_t width;
-    int i, j, p;
-    int ret;
+    size_t width = checksum->bits;
 
-    /* Transpose of a (width x bits_size) size matrix A */
-    width = checksum->bits;
-    AT = malloc(bits_size * sizeof(struct bigint));
-    if (!AT) return -(width+1);
+    /* Initialize bigints (holy fuck the code is so ugly)  */
+    if (!(AT = calloc(bits_size, sizeof(struct bigint))))
+        return -(width + 1);
+    ret = !bigint_init(&Hmsg, width) & !bigint_init(&x, width)
+        & !bigint_init(&d, width) & !bigint_init(&acc, width)
+        & !bigint_init(&mask, width);
+    for (i = 0; i < bits_size && bigint_init(&AT[i], width); i++);
+    if (ret != 0 || i < bits_size) {
+        ret = -(width + 1);
+        bits_size = i;
+        goto cleanup;
+    }
 
     /* A[i] = H(msg ^ bits[i]) ^ H(msg) */
-    bigint_init(&Hmsg, width);
     H(msg, length, &Hmsg);
     if (msg != buf)
         memcpy(buf, msg, length);
     for (i = 0; i < bits_size; i++) {
         FLIP_BIT(buf, bits[i]);
-        bigint_init(&AT[i], width);
         H(buf, length, &AT[i]);
         bigint_xor(&AT[i], &Hmsg);
         FLIP_BIT(buf, bits[i]);
     }
 
     /* d = checksum ^ H(msg) */
-    bigint_init(&d, width);
     bigint_mov(&d, checksum);
     bigint_xor(&d, &Hmsg);
 
@@ -37,10 +41,7 @@ int forge(const u8 *msg, size_t length, const struct bigint *checksum,
      * Solve x from Ax = d
      */
     p = 0;
-    bigint_init(&x, width);
     bigint_load_zeros(&x);
-    bigint_init(&acc, width);
-    bigint_init(&mask, width);
     bigint_load_zeros(&mask);
     for (i = 0; i < width; i++) {
         /* Find next pivot (row with a non-zero column i) */
@@ -110,7 +111,7 @@ int forge(const u8 *msg, size_t length, const struct bigint *checksum,
         ret = -(width-i);
     }
 
-    /* Cleanup */
+cleanup:
     bigint_destroy(&mask);
     bigint_destroy(&acc);
     bigint_destroy(&d);

@@ -1,7 +1,7 @@
 **crchack** is a public domain tool to force CRC checksums to arbitrarily chosen
 values. The main advantage over existing CRC alteration tools is the ability to
 obtain the desired checksum by changing non-contiguous input bits. crchack
-supports all commonly used CRC algorithms as well as custom parameters.
+supports all commonly used CRC algorithms as well as any custom parameters.
 
 - [Usage](#usage)
 - [Examples](#examples)
@@ -23,7 +23,7 @@ options:
   -v        verbose mode
 
 CRC parameters (default: CRC-32):
-  -w size   register size in bits   -p poly   generator polynomial
+  -p poly   generator polynomial    -w size   register size in bits
   -i init   initial register value  -x xor    final register XOR mask
   -r        reverse input bytes     -R        reverse final register
 ```

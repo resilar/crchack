@@ -28,7 +28,7 @@ static void help(char *argv0)
          "  -v        verbose mode\n"
          "\n"
          "CRC parameters (default: CRC-32):\n"
-         "  -w size   register size in bits   -p poly   generator polynomial\n"
+         "  -p poly   generator polynomial    -w size   register size in bits\n"
          "  -i init   initial register value  -x xor    final register XOR mask\n"
          "  -r        reverse input bytes     -R        reverse final register\n");
 }
@@ -45,7 +45,6 @@ struct slice {
 static int parse_slice(const char *p, struct slice *slice);
 static int parse_offset(const char *p, ssize_t *offset);
 static size_t bits_of_slice(struct slice *slice, size_t end, size_t *bits);
-
 
 /**
  * User input and options.
@@ -90,10 +89,24 @@ static int handle_options(int argc, char *argv[])
     width = 0;
     poly = init = xor_out = NULL;
     reflect_in = reflect_out = 0;
+    memset(&input, 0, sizeof(input));
 
     /* Parse command options */
-    while ((c = getopt(argc, argv, "o:O:b:hvw:p:i:x:rR")) != -1) {
+    while ((c = getopt(argc, argv, "hvp:w:i:x:rRo:O:b:")) != -1) {
         switch (c) {
+        case 'h': help(argv[0]); return 1;
+        case 'v': input.verbose++; break;
+        case 'p': poly = optarg; break;
+        case 'w':
+            if (sscanf(optarg, "%zu", &width) != 1) {
+                fprintf(stderr, "invalid CRC width '%s'\n", optarg);
+                return 1;
+            }
+            break;
+        case 'i': init = optarg; break;
+        case 'x': xor_out = optarg; break;
+        case 'r': reflect_in = 1; break;
+        case 'R': reflect_out = 1; break;
         case 'o': case 'O':
             if (has_offset) {
                 fprintf(stderr, "multiple -oO not allowed\n");
@@ -105,34 +118,28 @@ static int handle_options(int argc, char *argv[])
             }
             has_offset = c;
             break;
-        case 'b': {
-            struct slice *new;
-            new = realloc(input.slices, ++input.nslices * sizeof(struct slice));
-            if (!new) {
-                fprintf(stderr, "allocating slice %zu failed\n", input.nslices);
-                return 1;
+        case 'b':
+            if (!(input.nslices & (input.nslices + 1))) {
+                struct slice *new;
+                if (input.slices == NULL) {
+                    new = malloc(64 * sizeof(struct slice));
+                } else {
+                    size_t capacity = 2*(input.nslices + 1);
+                    new = realloc(input.slices, capacity*sizeof(struct slice));
+                }
+                if (!new) {
+                    fprintf(stderr, "out-of-memory allocating slice %zu\n",
+                            input.nslices + 1);
+                    return 1;
+                }
+                input.slices = new;
             }
-            input.slices = new;
-            if (!parse_slice(optarg, &input.slices[input.nslices-1])) {
+            if (!parse_slice(optarg, &input.slices[input.nslices])) {
                 fprintf(stderr, "invalid slice '%s'\n", optarg);
                 return 1;
             }
+            input.nslices++;
             break;
-        }
-        case 'h': help(argv[0]); return 1;
-        case 'v': input.verbose++; break;
-
-        case 'w':
-            if (sscanf(optarg, "%zu", &width) != 1) {
-                fprintf(stderr, "invalid CRC width '%s'\n", optarg);
-                return 1;
-            }
-            break;
-        case 'p': poly = optarg; break;
-        case 'i': init = optarg; break;
-        case 'x': xor_out = optarg; break;
-        case 'r': reflect_in = 1; break;
-        case 'R': reflect_out = 1; break;
 
         case '?':
             if (strchr("oObwpix", optopt)) {
@@ -158,13 +165,22 @@ static int handle_options(int argc, char *argv[])
     input_fn = argv[optind];
 
     /* CRC parameters */
-    input.crc.width = (width) ? width : 32;
+    if (!width && poly) {
+        const char *p = poly + ((poly[0] == '0' && poly[1] == 'x') << 1);
+        size_t span = strspn(p, "0123456789abcdefABCDEF");
+        if (!span || p[span] != '\0') {
+            fprintf(stderr, "invalid poly (%s)\n", poly);
+            return 1;
+        }
+        width = span * 4;
+    }
+    input.crc.width = width ? width : 32;
     bigint_init(&input.crc.poly, input.crc.width);
     bigint_init(&input.crc.init, input.crc.width);
     bigint_init(&input.crc.xor_out, input.crc.width);
     if (width || poly || init || xor_out || reflect_in || reflect_out) {
-        if (!width || !poly) {
-            fprintf(stderr, "CRC width and polynomial are required\n");
+        if (!poly) {
+            fprintf(stderr, "custom CRC requires generator polynomial\n");
             return 1;
         }
 
@@ -235,10 +251,9 @@ static int handle_options(int argc, char *argv[])
     }
 
     /* Determine (upper bound for) size of the input.bits array */
-    nbits = (has_offset || !input.slices) ? input.crc.width : 0;
-    for (i = 0; i < input.nslices; i++) {
+    nbits = (has_offset || !input.nslices) ? input.crc.width : 0;
+    for (i = 0; i < input.nslices; i++)
         nbits += bits_of_slice(&input.slices[i], input.len * 8, NULL);
-    }
 
     /* Fill input.bits */
     if (nbits) {
@@ -250,7 +265,7 @@ static int handle_options(int argc, char *argv[])
 
         for (i = 0; i < input.nslices; i++) {
             size_t n = bits_of_slice(&input.slices[i], input.len * 8,
-                    &input.bits[input.nbits]);
+                                     &input.bits[input.nbits]);
             input.nbits += n;
         }
 
@@ -486,9 +501,9 @@ fail:
     return NULL;
 }
 
-static void crc_checksum(const u8 *msg, size_t length, struct bigint *out)
+static void crc_checksum(const u8 *msg, size_t length, struct bigint *checksum)
 {
-    crc(msg, length, &input.crc, out);
+    crc(msg, length, &input.crc, checksum);
 }
 
 int main(int argc, char *argv[])
@@ -496,8 +511,7 @@ int main(int argc, char *argv[])
     int exit_code, i, j, ret;
     u8 *out = NULL;
 
-    /* Get options */
-    memset(&input, 0, sizeof(input));
+    /* Parse command-line */
     if ((exit_code = handle_options(argc, argv)))
         goto finish;
 
@@ -553,7 +567,7 @@ int main(int argc, char *argv[])
 
     /* Forge */
     ret = forge(input.msg, input.len, &input.checksum, crc_checksum,
-            input.bits, input.nbits, out);
+                input.bits, input.nbits, out);
 
     /* Show flipped bits */
     if (input.verbose >= 1) {
