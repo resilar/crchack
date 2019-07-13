@@ -388,19 +388,24 @@ static int parse_offset(const char *p, ssize_t *offset)
 
 static int parse_slice(const char *p, struct slice *slice)
 {
+    int relative;
+
     slice->s = 1;
     slice->l = 0;
 
     /* L:r:s */
     if (!peek(&p) || (*p != ':' && !(p = parse_slice_offset(p, &slice->l))))
         return 0;
-    slice->r = !peek(&p) ? slice->l+1 : (SIZE_MAX >> 1);;
+    slice->r = !peek(&p) ? slice->l+1 : ((size_t)SIZE_MAX >> 1);
     p += *p == ':';
 
     /* l:R:s */
     if (!peek(&p)) return 1;
+    relative = peek(&p) == '+';
     if (*p != ':' && !(p = parse_slice_offset(p, &slice->r)))
         return 0;
+    if (relative)
+        slice->r += slice->l;
     p += *p == ':';
 
     /* l:r:S */
