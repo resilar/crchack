@@ -16,12 +16,19 @@ struct crc_params {
 };
 
 /**
- * Calculate CRC checksum using parameters defined in *config.
+ * Calculate CRC checksum of message with *config parameters.
  *
- * The result is written to *out which must point to an initialized bigint
- * structure.
+ * Result is written to a bigint in *checksum (must be initialized).
  */
-void crc(const u8 *msg, size_t length, struct crc_params *config,
-        struct bigint *out);
+void crc(const u8 *msg, size_t length, const struct crc_params *config,
+         struct bigint *checksum);
+
+/**
+ * Append a message to an existing checksum calculated with *config.
+ *
+ * Function updates *checksum to match the resulting appended message.
+ */
+void crc_append(const u8 *msg, size_t length, const struct crc_params *config,
+                struct bigint *checksum);
 
 #endif
