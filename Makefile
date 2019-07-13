@@ -1,4 +1,4 @@
-CFLAGS += -Wall -std=c99 -pedantic
+CFLAGS += -g -Wall -std=c99 -pedantic
 LDFLAGS +=
 
 all: crchack
