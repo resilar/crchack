@@ -18,7 +18,7 @@ struct crc_params {
 /**
  * Calculate CRC checksum of message with *config parameters.
  *
- * Result is written to a bigint in *checksum (must be initialized).
+ * Result is written to a bigint in *checksum (must be zero-initialized!)
  */
 void crc(const u8 *msg, size_t length, const struct crc_params *config,
          struct bigint *checksum);
