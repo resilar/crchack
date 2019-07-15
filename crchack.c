@@ -50,12 +50,16 @@ static size_t bits_of_slice(struct slice *slice, size_t end, size_t *bits);
  * User input and options.
  */
 static struct {
+    char *filename;
+    FILE *file;
+
     u8 *msg;
     size_t len;
+    struct bigint checksum;
 
     struct crc_params crc;
-    struct bigint checksum;
-    int has_checksum;
+    struct bigint target;
+    int has_target;
 
     size_t *bits;
     size_t nbits;
@@ -66,24 +70,23 @@ static struct {
     int verbose;
 } input;
 
+static FILE *handle_message_file(const char *filename, size_t *size);
+
 /**
  * Parse command-line arguments.
  *
  * Returns an exit code (0 for success).
  */
-static u8 *read_input_message(FILE *in, size_t *length);
 static int handle_options(int argc, char *argv[])
 {
-    size_t nbits;
     ssize_t offset;
     int has_offset;
-    size_t i, width;
-    char c, *checksum, *input_fn;
-    char *poly, *init, reflect_in, reflect_out, *xor_out;
+    size_t i, nbits, width;
+    char *poly, *init, reflect_in, reflect_out, *xor_out, *target, c;
 
     offset = 0;
     has_offset =  0;
-    checksum = input_fn = NULL;
+    target = NULL;
 
     /* CRC parameters */
     width = 0;
@@ -161,8 +164,8 @@ static int handle_options(int argc, char *argv[])
         help(argv[0]);
         return 1;
     }
-    checksum = (optind == argc-2) ? argv[argc-1] : NULL;
-    input_fn = argv[optind];
+    input.filename = argv[optind];
+    target = (optind == argc-2) ? argv[argc-1] : NULL;
 
     /* CRC parameters */
     if (!width && poly) {
@@ -214,37 +217,32 @@ static int handle_options(int argc, char *argv[])
         input.crc.reflect_out = 1;
     }
 
-    /* Read input mesasge */
-    if (!strcmp(input_fn, "-")) {
-        if (!(input.msg = read_input_message(stdin, &input.len))) {
-            fprintf(stderr, "reading message from stdin failed\n");
-            return 2;
-        }
-    } else {
-        FILE *in;
-        if (!(in = fopen(input_fn, "rb"))) {
-            fprintf(stderr, "opening file '%s' for read failed\n", input_fn);
-            return 2;
-        }
-        input.msg = read_input_message(in, &input.len);
-        fclose(in);
-        if (!input.msg) {
-            fprintf(stderr, "reading file '%s' failed\n", input_fn);
-            return 2;
-        }
-    }
-
-    /* Read checksum value */
-    if (checksum) {
-        bigint_init(&input.checksum, input.crc.width);
-        if (!bigint_from_string(&input.checksum, checksum)) {
-            bigint_destroy(&input.checksum);
-            fprintf(stderr, "checksum '%s' is not a valid %d-bit hex value\n",
-                    checksum, input.crc.width);
+    /* Read target checksum value */
+    if (target) {
+        bigint_init(&input.target, input.crc.width);
+        if (!bigint_from_string(&input.target, target)) {
+            bigint_destroy(&input.target);
+            fprintf(stderr, "target checksum '%s' invalid %d-bit hex string\n",
+                    target, input.crc.width);
             return 1;
         }
-        input.has_checksum = 1;
-    } else {
+        input.has_target = 1;
+    }
+
+    /* Read input message */
+    if (!(input.file = handle_message_file(input.filename, &input.len)))
+        return 2;
+
+    /* Verbose message info */
+    if (input.verbose >= 1) {
+        fprintf(stderr, "len(msg) = %zu bytes\n", input.len);
+        fprintf(stderr, "CRC(msg) = ");
+        bigint_fprint(stderr, &input.checksum);
+        fprintf(stderr, "\n");
+    }
+
+    /* Remaining flags are required only for forging */
+    if (!input.has_target) {
         if (has_offset) fprintf(stderr, "flags -oO ignored\n");
         if (input.slices) fprintf(stderr, "flag -b ignored\n");
         return 0;
@@ -259,7 +257,7 @@ static int handle_options(int argc, char *argv[])
     if (nbits) {
         /* Read bit indices from '-b' slices */
         if (!(input.bits = calloc(nbits, sizeof(size_t)))) {
-            fprintf(stderr, "allocating bits array failed\n");
+            fprintf(stderr, "error allocating bits array\n");
             return 4;
         }
 
@@ -278,9 +276,8 @@ static int handle_options(int argc, char *argv[])
         }
     }
 
-    /* Verbose info */
+    /* Verbose bits info */
     if (input.verbose >= 1) {
-        fprintf(stderr, "len(msg) = %zu bytes\n", input.len);
         fprintf(stderr, "bits[%zu] = {", input.nbits);
         for (i = 0; i < input.nbits; i++)
             fprintf(stderr, &", %zu.%zu"[!i], input.bits[i]/8, input.bits[i]%8);
@@ -288,6 +285,134 @@ static int handle_options(int argc, char *argv[])
     }
 
     return 0;
+}
+
+/* TODO: Remove this function once forging supports chunk-based processing. */
+static u8 *read_input_message(FILE *in, size_t *length)
+{
+    size_t capacity, *size, tmp;
+    u8 *msg, *new;
+
+    /* Read using a dynamic buffer (to support non-seekable streams) */
+    if (!(msg = malloc((capacity = 1024))))
+        return NULL;
+
+    *(size = length ? length : &tmp) = 0;
+    while (!feof(in)) {
+        if (*size == capacity) {
+            if (!(new = realloc(msg, (capacity = capacity*2))))
+                goto fail;
+            msg = new;
+        }
+        *size += fread(&msg[*size], sizeof(u8), capacity-*size, in);
+        if (ferror(in))
+            goto fail;
+    }
+
+    /* Truncate */
+    if (0 < *size && *size < capacity && (new = realloc(msg, *size)))
+        msg = new;
+    return msg;
+
+fail:
+    free(msg);
+    return NULL;
+}
+
+static FILE *handle_message_file(const char *filename, size_t *size)
+{
+    fpos_t start;
+    FILE *in, *temp;
+    char buf[BUFSIZ];
+
+    /* Initialize CRC for empty message */
+    if (!bigint_init(&input.checksum, input.crc.width))
+        return NULL;
+    bigint_load_zeros(&input.checksum);
+    crc(NULL, (*size = 0), &input.crc, &input.checksum);
+
+    /* Get input stream for calculating CRC */
+    if ((in = !strcmp(filename, "-") ? stdin : fopen(filename, "rb")) == NULL) {
+        fprintf(stderr, "open '%s' for reading failed\n", filename);
+        return NULL;
+    }
+
+    if (input.has_target && (in == stdin || fgetpos(in, &start) != 0)) {
+        /*
+         * Modifying input message but got a non-seekable file stream.
+         * As a workaround, copy the input message to a temporary file.
+         */
+        if (input.verbose >= 1)
+            fputs("creating temporary file to store input message\n", stderr);
+        if (!(temp = tmpfile())) {
+            fputs("error creating temporary file for input message\n", stderr);
+            goto fail;
+        }
+    } else {
+        temp = NULL;
+    }
+
+    if (input.has_target) {
+        /* Get position for rewinding */
+        if (fgetpos(temp ? temp : in, &start) != 0) {
+            fputs("fgetpos() error for ", stderr);
+            if (temp) fputs("temporary copy of ", stderr);
+            fprintf(stderr, "input file '%s'\n", filename);
+            goto fail;
+        }
+    }
+    while (!feof(in)) {
+        size_t n = fread(buf, sizeof(char), BUFSIZ, in);
+        if (!n || ferror(in)) {
+            fprintf(stderr, "error reading message from '%s'\n", filename);
+            goto fail;
+        } else if (temp) {
+            size_t i = 0;
+            while (i < n) {
+                size_t m = fwrite(buf, sizeof(char), n - i, temp);
+                if (!m || ferror(temp)) {
+                    fputs("error writing to temporary file\n", stderr);
+                    goto fail;
+                }
+                i += m;
+            }
+        }
+        crc_append(buf, n, &input.crc, &input.checksum);
+        *size += n;
+    }
+    if (input.has_target) {
+        /* Rewind */
+        if (fsetpos(temp ? temp : in, &start) != 0) {
+            fputs("fsetpos() error for ", stderr);
+            if (temp) fputs("temporary copy of ", stderr);
+            fprintf(stderr, "input file '%s'\n", filename);
+            goto fail;
+        }
+
+    }
+
+    if (temp) {
+        fclose(in);
+        in = temp;
+    }
+    if (input.has_target) {
+        /* TODO: Remove this once forging supports chunk-based processing */
+        size_t len;
+        if (!(input.msg = read_input_message(in, &len)) || len != *size) {
+            fputs("error reading input message from ", stderr);
+            if (temp) fputs("temporary copy of ", stderr);
+            fprintf(stderr, "input message file '%s'\n", filename);
+            fclose(in);
+            in = NULL;
+        }
+    }
+    return in;
+
+fail:
+    if (temp != NULL)
+        fclose(temp);
+    fclose(in);
+    return NULL;
 }
 
 /**
@@ -464,46 +589,9 @@ static size_t bits_of_slice(struct slice *slice, size_t end, size_t *bits)
     return n;
 }
 
-/**
- * Read input message from stream 'in' and store its length to *length.
- *
- * Returns a pointer to the read message which must be freed with free().
- * If the read fails, the return value is NULL.
- */
-static u8 *read_input_message(FILE *in, size_t *length)
+static void input_crc(const void *msg, size_t len, struct bigint *checksum)
 {
-    size_t capacity, *size, tmp;
-    u8 *msg, *new;
-
-    /* Read using a dynamic buffer (to support non-seekable streams) */
-    if (!(msg = malloc((capacity = 1024))))
-        return NULL;
-
-    *(size = length ? length : &tmp) = 0;
-    while (!feof(in)) {
-        if (*size == capacity) {
-            if (!(new = realloc(msg, (capacity = capacity*2))))
-                goto fail;
-            msg = new;
-        }
-        *size += fread(&msg[*size], sizeof(u8), capacity-*size, in);
-        if (ferror(in))
-            goto fail;
-    }
-
-    /* Truncate */
-    if (*size > 0 && *size < capacity && (new = realloc(msg, *size)))
-        msg = new;
-    return msg;
-
-fail:
-    free(msg);
-    return NULL;
-}
-
-static void crc_checksum(const u8 *msg, size_t length, struct bigint *checksum)
-{
-    crc(msg, length, &input.crc, checksum);
+    crc(msg, len, &input.crc, checksum);
 }
 
 int main(int argc, char *argv[])
@@ -515,15 +603,10 @@ int main(int argc, char *argv[])
     if ((exit_code = handle_options(argc, argv)))
         goto finish;
 
-    /* Calculate CRC and exit if no new checksum given */
-    if (!input.has_checksum) {
-        struct bigint checksum;
-        bigint_init(&checksum, input.crc.width);
-
-        crc(input.msg, input.len, &input.crc, &checksum);
-        bigint_print(&checksum); puts("");
-        bigint_destroy(&checksum);
-
+    /* Print CRC and exit if no target checksum given */
+    if (!input.has_target) {
+        bigint_print(&input.checksum);
+        puts("");
         exit_code = 0;
         goto finish;
     }
@@ -532,7 +615,7 @@ int main(int argc, char *argv[])
     for (i = j = 0; i < input.nbits; i++) {
         if (input.bits[i] > input.len*8 + input.crc.width - 1) {
             fprintf(stderr, "bits[%d]=%zu exceeds message length (%zu bits)\n",
-                    i, input.bits[i], input.len*8 + input.crc.width - 1);
+                    i, input.bits[i], input.len*8 + input.crc.width-1);
             exit_code = 3;
             goto finish;
         }
@@ -560,13 +643,13 @@ int main(int argc, char *argv[])
 
     /* Allocate output buffer for the modified message */
     if (!(out = malloc(input.len))) {
-        fprintf(stderr, "allocating output buffer failed\n");
+        fprintf(stderr, "error allocating output buffer\n");
         exit_code = 4;
         goto finish;
     }
 
     /* Forge */
-    ret = forge(input.msg, input.len, &input.checksum, crc_checksum,
+    ret = forge(input.msg, input.len, &input.target, input_crc,
                 input.bits, input.nbits, out);
 
     /* Show flipped bits */
@@ -593,7 +676,7 @@ int main(int argc, char *argv[])
         while (left > 0) {
             size_t written = fwrite(ptr, sizeof(u8), left, stdout);
             if (written <= 0 || ferror(stdout)) {
-                fprintf(stderr, "writing result to stdout failed\n");
+                fprintf(stderr, "error writing result to stdout\n");
                 exit_code = 5;
                 goto finish;
             }
@@ -612,7 +695,10 @@ int main(int argc, char *argv[])
     exit_code = 0;
 
 finish:
+    if (input.file)
+        fclose(input.file);
     bigint_destroy(&input.checksum);
+    bigint_destroy(&input.target);
     bigint_destroy(&input.crc.poly);
     bigint_destroy(&input.crc.init);
     bigint_destroy(&input.crc.xor_out);

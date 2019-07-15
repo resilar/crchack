@@ -1,36 +1,36 @@
 #include "forge.h"
 
-#define FLIP_BIT(msg, idx) ((msg)[(idx)/8] ^= 1 << ((idx) % 8))
-int forge(const u8 *msg, size_t length, const struct bigint *checksum,
-          void (*H)(const u8 *msg, size_t length, struct bigint *out),
-          size_t bits[], size_t bits_size, u8 *buf)
+#define FLIP_BIT(msg, idx) (((uint8_t *)msg)[(idx)/8] ^= 1 << ((idx) % 8))
+int forge(const void *msg, size_t len, const struct bigint *checksum,
+          void (*H)(const void *msg, size_t len, struct bigint *out),
+          size_t bits[], size_t bits_size, void *out)
 {
-    int i, j, p, ret;
+    int i, j, p, err, ret;
     struct bigint *AT, Hmsg, x, d, acc, mask;
     size_t width = checksum->bits;
 
     /* Initialize bigints (holy fuck the code is so ugly)  */
     if (!(AT = calloc(bits_size, sizeof(struct bigint))))
         return -(width + 1);
-    ret = !bigint_init(&Hmsg, width) & !bigint_init(&x, width)
-        & !bigint_init(&d, width) & !bigint_init(&acc, width)
-        & !bigint_init(&mask, width);
-    for (i = 0; i < bits_size && bigint_init(&AT[i], width); i++);
-    if (ret != 0 || i < bits_size) {
+    err = !bigint_init(&Hmsg, width) | !bigint_init(&x, width)
+        | !bigint_init(&d, width) | !bigint_init(&acc, width)
+        | !bigint_init(&mask, width);
+    for (i = 0; !err && i < bits_size; err |= !bigint_init(&AT[i++], width));
+    if (err) {
         ret = -(width + 1);
         bits_size = i;
         goto cleanup;
     }
 
     /* A[i] = H(msg ^ bits[i]) ^ H(msg) */
-    H(msg, length, &Hmsg);
-    if (msg != buf)
-        memcpy(buf, msg, length);
+    H(msg, len, &Hmsg);
+    if (msg != out)
+        memcpy(out, msg, len);
     for (i = 0; i < bits_size; i++) {
-        FLIP_BIT(buf, bits[i]);
-        H(buf, length, &AT[i]);
+        FLIP_BIT(out, bits[i]);
+        H(out, len, &AT[i]);
         bigint_xor(&AT[i], &Hmsg);
-        FLIP_BIT(buf, bits[i]);
+        FLIP_BIT(out, bits[i]);
     }
 
     /* d = checksum ^ H(msg) */
@@ -98,7 +98,7 @@ int forge(const u8 *msg, size_t length, const struct bigint *checksum,
         ret = 0;
         for (i = 0; i < width; i++) {
             if (bigint_get_bit(&x, i)) {
-                FLIP_BIT(buf, bits[i]);
+                FLIP_BIT(out, bits[i]);
                 if (ret != i) {
                     size_t tmp = bits[i];
                     bits[i] = bits[ret];
