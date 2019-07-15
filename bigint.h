@@ -4,7 +4,6 @@
 #ifndef BIGINT_H
 #define BIGINT_H
 
-#include <assert.h>
 #include <memory.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -134,7 +133,6 @@ static inline void bigint_flip_bit(const struct bigint *dest, size_t n)
 static inline struct bigint *bigint_mov(struct bigint *dest,
                                         const struct bigint *src)
 {
-    assert(dest->bits == src->bits);
     memcpy(dest->buf, src->buf, bigint_sizeof(dest));
     return dest;
 }
@@ -153,7 +151,6 @@ static inline struct bigint *bigint_xor(struct bigint *dest,
                                         const struct bigint *src)
 {
     size_t i, j;
-    assert(dest->bits == src->bits);
     for (i = 0, j = bigint_limbs(dest); i < j; i++)
         dest->buf[i] ^= src->buf[i];
     return dest;
@@ -164,7 +161,6 @@ static inline struct bigint *bigint_and(struct bigint *dest,
                                         const struct bigint *src)
 {
     size_t i, j = bigint_limbs(dest);
-    assert(dest->bits == src->bits);
     for (i = 0; i < j; i++)
         dest->buf[i] &= src->buf[i];
     return dest;
@@ -172,7 +168,6 @@ static inline struct bigint *bigint_and(struct bigint *dest,
 
 /* Swap the values of two bigints */
 static inline void bigint_swap(struct bigint *a, struct bigint *b) {
-    assert(a->bits == b->bits);
     limb_t *buf = a->buf;
     a->buf = b->buf;
     b->buf = buf;
