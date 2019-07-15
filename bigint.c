@@ -7,7 +7,7 @@ void bigint_fprint(FILE *stream, const struct bigint *dest)
         const limb_t limb = dest->buf[j-i];
         for (k = k % (LIMB_BITS/4); k < LIMB_BITS/4; k++) {
             unsigned char nibble = (limb >> (LIMB_BITS - 4*(k+1))) & 0x0F;
-            fputc((nibble < 10) ? (nibble + '0') : (nibble - 10 + 'a'), stdout);
+            fputc((nibble < 10) ? (nibble + '0') : (nibble - 10 + 'a'), stream);
         }
     }
 }
