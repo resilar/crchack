@@ -1,5 +1,5 @@
-#include <stdint.h>
 #include "crc.h"
+#include <stdint.h>
 
 void crc(const void *msg, size_t len, const struct crc_params *config,
          struct bigint *checksum)
