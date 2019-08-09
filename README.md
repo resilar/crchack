@@ -13,12 +13,12 @@ supports all commonly used CRC algorithms as well as any custom parameters.
 # Usage
 
 ```
-usage: ./crchack [options] file [new_checksum]
+usage: ./crchack [options] file [target_checksum]
 
 options:
-  -o pos    byte.bit offset of mutable input bits
-  -O pos    offset from the end of the input
-  -b l:r:s  specify bits at offsets l..r with step s
+  -o pos    byte.bit position of mutable input bits
+  -O pos    position offset from the end of the input
+  -b l:r:s  specify bits at positions l..r with step s
   -h        show this help
   -v        verbose mode
 
@@ -28,11 +28,11 @@ CRC parameters (default: CRC-32):
   -r        reverse input bytes     -R        reverse final register
 ```
 
-The input message is read from *file* and the adjusted message is written to
-stdout. By default, crchack appends 4 bytes to the input producing a new message
-that has the target CRC-32 checksum. Other CRC algorithms can be defined via the
-CRC parameters. If *new_checksum* is not given, then crchack writes the CRC
-checksum of the input message to stdout and exits.
+Input message is read from *file* and the adjusted message is written to stdout.
+By default, crchack appends 4 bytes to the input producing a new message with
+the target CRC-32 checksum. Other CRC algorithms are defined using the CRC
+parameters. If *target_checksum* is unspecified, then crchack calculates the CRC
+checksum of the input message and writes the result to stdout.
 
 
 # Examples
@@ -56,16 +56,20 @@ deadbeef
 PING 1234
 ```
 
-In order to modify non-consecutive input message bits, the modifiable bits need
-to be specified with `-b start:end:step` switches, where the argument is a
-Python-style *slice* representing the bits between the positions `start` and
-`end` (exclusive) with successive bits `step` bits apart. By default, `start` is
-the beginning of the message, `end` is the end of the message, and `step` equals
-to 1 bit. For example, `-b 4:` selects all bits starting from the *byte* offset
-4 (note that `-b 4` without the colon selects only the 32nd bit). Negative
-offsets are from the end of the input.
+In order to modify non-consecutive input message bits, specify the mutable bits
+with `-b start:end:step` switches that accept Python-style *slices* representing
+the bits between positions `start` and `end` (exclusive) with successive bits
+`step` bits apart. If empty, `start` is the beginning of the message, `end` is
+the end of the message, and `step` equals 1 bit to select all bits in between.
+For example, `-b 4:` selects all bits starting from the *byte* position 4 (note
+that `-b 4` without the colon selects only the 32nd bit).
 
 ```
+[crchack]$ echo "aXbXXcXd" | ./crchack -b1:2 -b3:5 -b6:7 - cafebabe | xxd
+00000000: 61d6 6298 f763 4d64 0a                   a.b..cMd.
+[crchack]$ echo -e "a\xD6b\x98\xF7c\x4Dd" | ./crchack -
+cafebabe
+
 [crchack]$ echo "1234PQPQ" | ./crchack -b 4: - 12345678
 1234u>|7
 [crchack]$ echo "1234PQPQ" | ./crchack -b :4 - 12345678
@@ -75,19 +79,16 @@ _MLPPQPQ
 12345678
 ```
 
-The byte offset is optionally followed by a dot-separated *bit* offset so that,
-e.g., `-b0.32`, `-b2.16` and `-b4.0` select the 32nd bit. Bits within a byte are
-numbered from 0 (least significant bit) to 7 (most significant bit). Finally,
-`0x`-prefixed hexadecimal numbers as well as basic arithmetic operations `+-*/`
-are supported by the built-in expression parser.
+The byte position is optionally followed by a dot-separated *bit* position,
+e.g., `-b0.32`, `-b2.16` and `-b4.0` select the same 32nd bit. Bits within a
+byte are numbered from least significant bit (0) to most significant bit (7).
+Negative positions are offsets relative to the end of the input.  Built-in
+expression parser supports `0x`-prefixed hexadecimal numbers as well as basic
+arithmetic operations `+-*/`. Finally, `end` can be defined as a relative
+offset with respect to `start` by prepending `+` to the value.
 
 ```
-[crchack]$ echo "aXbXXcXd" | ./crchack -b1:2 -b3:5 -b6:7 - cafebabe | xxd
-00000000: 61d6 6298 f763 4d64 0a                   a.b..cMd.
-[crchack]$ echo -e "a\xD6b\x98\xF7c\x4Dd" | ./crchack -
-cafebabe
-
-[crchack]$ python -c 'print("A"*0x20)' | ./crchack -b "0.5:0.5+8*0x20:.8" - 1337c0de
+[crchack]$ python -c 'print("A"*32)' | ./crchack -b "0.5:+8*32:.8" - 1337c0de
 AAAaAaaaaaAAAaAaAaAaAaaAaAaaAAaA
 [crchack]$ echo "AAAaAaaaaaAAAaAaAaAaAaaAaAaaAAaA" | ./crchack -
 1337c0de
@@ -105,10 +106,9 @@ the width of the CRC register, e.g., 32 bits for CRC-32.
 
 # CRC algorithms
 
-crchack works with all CRCs that use sane generator polynomial, including all
-commonly used and standardized CRCs. The program defaults to CRC-32, while other
-CRC functions can be specified by passing the CRC parameters via command-line
-arguments.
+crchack works with all CRCs that use sane parameters, including all commonly
+used standardized CRCs. crchack defaults to CRC-32 and other CRC functions can
+be specified by passing the CRC parameters via command-line arguments.
 
 ```
 [crchack]$ printf "123456789" > msg
@@ -136,20 +136,18 @@ and satisfy only a "weaker" linear property:
     CRC(x ^ y ^ z) = CRC(x) ^ CRC(y) ^ CRC(z), for |x| = |y| = |z|
 
 The method can be viewed as applying this rule repeatedly to produce an
-invertible system of linear equations. Solving the system tells us which bits in
-the input data need to be flipped.
+invertible system of linear equations. Solving the system tells us which bits
+in the input data need to be flipped.
 
 The intuition is that flipping each input bit causes a fixed difference in the
 resulting checksum (independent of the values of the neighbouring bits). This,
 in addition to knowing the required difference, gives a system of linear
 equations over GF(2). The system of equations can then be expressed in a matrix
-form and solved with, e.g., the Gauss-Jordan elimination algorithm. Under- and
-overdetermined systems require special handling.
+form and solved with, e.g., the Gauss-Jordan elimination algorithm.
 
-Note that the CRC function is treated as a "black box", i.e., the internal
-parameters of the CRC are not needed except for evaluation. In fact, the same
-approach is applicable to all checksum functions that satisfy the weak linearity
-property.
+Notice that the CRC function is treated as a "black box", i.e., the internal
+CRC parameters are used only for evaluation. Therefore, the same approach is
+applicable to any function that satisfies the weak linearity property.
 
 
 # Use cases

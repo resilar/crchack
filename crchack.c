@@ -18,19 +18,19 @@
  */
 static void help(char *argv0)
 {
-    fprintf(stderr, "usage: %s [options] file [new_checksum]\n", argv0);
+    fprintf(stderr, "usage: %s [options] file [target_checksum]\n", argv0);
     fprintf(stderr, "\n"
-         "options:\n"
-         "  -o pos    byte.bit offset of mutable input bits\n"
-         "  -O pos    offset from the end of the input\n"
-         "  -b l:r:s  specify bits at offsets l..r with step s\n"
-         "  -h        show this help\n"
-         "  -v        verbose mode\n"
-         "\n"
-         "CRC parameters (default: CRC-32):\n"
-         "  -p poly   generator polynomial    -w size   register size in bits\n"
-         "  -i init   initial register value  -x xor    final register XOR mask\n"
-         "  -r        reverse input bytes     -R        reverse final register\n");
+    "options:\n"
+    "  -o pos    byte.bit position of mutable input bits\n"
+    "  -O pos    position offset from the end of the input\n"
+    "  -b l:r:s  specify bits at positions l..r with step s\n"
+    "  -h        show this help\n"
+    "  -v        verbose mode\n"
+    "\n"
+    "CRC parameters (default: CRC-32):\n"
+    "  -p poly   generator polynomial    -w size   register size in bits\n"
+    "  -i init   initial register value  -x xor    final register XOR mask\n"
+    "  -r        reverse input bytes     -R        reverse final register\n");
 }
 
 /**
