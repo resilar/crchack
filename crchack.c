@@ -363,7 +363,7 @@ static FILE *handle_message_file(const char *filename, size_t *size)
     }
     while (!feof(in)) {
         size_t n = fread(buf, sizeof(char), BUFSIZ, in);
-        if (!n || ferror(in)) {
+        if (ferror(in)) {
             fprintf(stderr, "error reading message from '%s'\n", filename);
             goto fail;
         } else if (temp) {
