@@ -80,9 +80,9 @@ static FILE *handle_message_file(const char *filename, size_t *size);
 static int handle_options(int argc, char *argv[])
 {
     ssize_t offset;
-    int has_offset;
+    int c, has_offset;
     size_t i, nbits, width;
-    char *poly, *init, reflect_in, reflect_out, *xor_out, *target, c;
+    char *poly, *init, reflect_in, reflect_out, *xor_out, *target;
 
     offset = 0;
     has_offset =  0;
