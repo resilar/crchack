@@ -13,15 +13,21 @@ struct crc_config {
     int reflect_out;        /* reverse final register */
 };
 
-/* Calculate CRC checksum of a (j-i+1)-bit message[i..j] */
-void crc_bits(const struct crc_config *crc, const void *msg, size_t i, size_t j,
+/* Calculate CRC checksum of a (j-i)-bit message[i..j-1] */
+void crc_bits(const struct crc_config *crc,
+              const void *msg, size_t i, size_t j,
               struct bigint *checksum);
 
 /* Calculate CRC checksum of a len-byte message */
 void crc(const struct crc_config *crc, const void *msg, size_t len,
          struct bigint *checksum);
 
-/* Append a message to an existing checksum calculated */
+/* Append a (j-i)-bit message[i..j-1] to an existing checksum  */
+void crc_append_bits(const struct crc_config *crc,
+                     const void *msg, size_t i, size_t j,
+                     struct bigint *checksum);
+
+/* Append a len-byte message to an existing checksum  */
 void crc_append(const struct crc_config *crc, const void *msg, size_t len,
                 struct bigint *checksum);
 

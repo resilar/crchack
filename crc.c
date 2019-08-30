@@ -6,7 +6,8 @@ static const uint8_t bytebits[2][8] = {
     { 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80 }  /* LSB to MSB */
 };
 
-void crc_bits(const struct crc_config *crc, const void *msg, size_t i, size_t j,
+void crc_bits(const struct crc_config *crc,
+              const void *msg, size_t i, size_t j,
               struct bigint *checksum)
 {
     /* Input bytes */
@@ -41,14 +42,21 @@ void crc(const struct crc_config *crc, const void *msg, size_t len,
     crc_bits(crc, msg, 0, 8*len, checksum);
 }
 
-void crc_append(const struct crc_config *crc, const void *msg, size_t len,
-                struct bigint *checksum)
+void crc_append_bits(const struct crc_config *crc,
+                     const void *msg, size_t i, size_t j,
+                     struct bigint *checksum)
 {
     if (crc->reflect_out)
         bigint_reflect(checksum);
     bigint_xor(checksum, &crc->xor_out);
     bigint_xor(checksum, &crc->init);
-    crc_bits(crc, msg, 0, 8*len, checksum);
+    crc_bits(crc, msg, i, j, checksum);
+}
+
+void crc_append(const struct crc_config *crc, const void *msg, size_t len,
+                struct bigint *checksum)
+{
+    crc_append_bits(crc, msg, 0, 8*len, checksum);
 }
 
 /*

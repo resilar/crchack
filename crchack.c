@@ -306,7 +306,7 @@ static int handle_options(int argc, char *argv[])
         left = input.pad;
         while (left > 0) {
             size_t n = (left < sizeof(padding)) ? left : sizeof(padding);
-            crc_append(&input.crc, padding, n, &input.checksum);
+            crc_append_bits(&input.crc, padding, 0, 8*n, &input.checksum);
             left -= n;
         }
         if (input.verbose >= 1)
@@ -378,7 +378,7 @@ static FILE *handle_message_file(const char *filename, size_t *size)
                 i += m;
             }
         }
-        crc_append(&input.crc, buf, n, &input.checksum);
+        crc_append_bits(&input.crc, buf, 0, 8*n, &input.checksum);
         *size += n;
     }
 
