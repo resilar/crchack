@@ -1,8 +1,9 @@
 #include "forge.h"
+#include <stdint.h>
 
-#define FLIP_BIT(msg, idx) (((uint8_t *)msg)[(idx)/8] ^= 1 << ((idx) % 8))
-int forge(const void *msg, size_t len, const struct bigint *checksum,
-          void (*H)(const void *msg, size_t len, struct bigint *out),
+/* TODO: Rewrite */
+int forge(size_t len, const struct bigint *checksum,
+          void (*H)(size_t len, struct bigint *out),
           size_t bits[], size_t bits_size, void *out)
 {
     int i, j, p, err, ret;
@@ -23,14 +24,10 @@ int forge(const void *msg, size_t len, const struct bigint *checksum,
     }
 
     /* A[i] = H(msg ^ bits[i]) ^ H(msg) */
-    H(msg, len, &Hmsg);
-    if (msg != out)
-        memcpy(out, msg, len);
+    H(8*len, &Hmsg);
     for (i = 0; i < bits_size; i++) {
-        FLIP_BIT(out, bits[i]);
-        H(out, len, &AT[i]);
+        H(bits[i], &AT[i]);
         bigint_xor(&AT[i], &Hmsg);
-        FLIP_BIT(out, bits[i]);
     }
 
     /* d = checksum ^ H(msg) */
@@ -98,7 +95,6 @@ int forge(const void *msg, size_t len, const struct bigint *checksum,
         ret = 0;
         for (i = 0; i < width; i++) {
             if (bigint_get_bit(&x, i)) {
-                FLIP_BIT(out, bits[i]);
                 if (ret != i) {
                     size_t tmp = bits[i];
                     bits[i] = bits[ret];
@@ -122,4 +118,3 @@ cleanup:
     free(AT);
     return ret;
 }
-#undef FLIP_BIT

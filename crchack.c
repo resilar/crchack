@@ -1,19 +1,18 @@
+#define __USE_MINGW_ANSI_STDIO 1 /* make MinGW happy */
 #include "crchack.h"
+#include "bigint.h"
+#include "crc.h"
+#include "forge.h"
 
 #include <ctype.h>
 #include <getopt.h>
 #include <limits.h>
-#define __USE_MINGW_ANSI_STDIO 1 /* make MinGW happy */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
-#include "bigint.h"
-#include "crc.h"
-#include "forge.h"
-
-/**
+/*
  * Usage.
  */
 static void help(char *argv0)
@@ -33,7 +32,7 @@ static void help(char *argv0)
     "  -r        reverse input bytes     -R        reverse final register\n");
 }
 
-/**
+/*
  * Structure and functions for slices of bit indices.
  */
 struct slice {
@@ -46,18 +45,20 @@ static int parse_slice(const char *p, struct slice *slice);
 static int parse_offset(const char *p, ssize_t *offset);
 static size_t bits_of_slice(struct slice *slice, size_t end, size_t *bits);
 
-/**
+/*
  * User input and options.
  */
 static struct {
     char *filename;
-    FILE *file;
+    FILE *in;
+    FILE *out;
 
-    u8 *msg;
     size_t len;
+    size_t pad;
     struct bigint checksum;
 
-    struct crc_params crc;
+    struct crc_config crc;
+    struct crc_sparse *sparse;
     struct bigint target;
     int has_target;
 
@@ -72,7 +73,7 @@ static struct {
 
 static FILE *handle_message_file(const char *filename, size_t *size);
 
-/**
+/*
  * Parse command-line arguments.
  *
  * Returns an exit code (0 for success).
@@ -81,7 +82,7 @@ static int handle_options(int argc, char *argv[])
 {
     ssize_t offset;
     int c, has_offset;
-    size_t i, nbits, width;
+    size_t i, j, nbits, width;
     char *poly, *init, reflect_in, reflect_out, *xor_out, *target;
 
     offset = 0;
@@ -230,8 +231,9 @@ static int handle_options(int argc, char *argv[])
     }
 
     /* Read input message */
-    if (!(input.file = handle_message_file(input.filename, &input.len)))
+    if (!(input.in = handle_message_file(input.filename, &input.len)))
         return 2;
+    input.out = stdout;
 
     /* Verbose message info */
     if (input.verbose >= 1) {
@@ -284,39 +286,40 @@ static int handle_options(int argc, char *argv[])
         fprintf(stderr, " }\n");
     }
 
-    return 0;
-}
-
-/* TODO: Remove this function once forging supports chunk-based processing. */
-static u8 *read_input_message(FILE *in, size_t *length)
-{
-    size_t capacity, *size, tmp;
-    u8 *msg, *new;
-
-    /* Read using a dynamic buffer (to support non-seekable streams) */
-    if (!(msg = malloc((capacity = 1024))))
-        return NULL;
-
-    *(size = length ? length : &tmp) = 0;
-    while (!feof(in)) {
-        if (*size == capacity) {
-            if (!(new = realloc(msg, (capacity = capacity*2))))
-                goto fail;
-            msg = new;
+    /* Check bits array and pad the message buffer if needed */
+    for (i = j = 0; i < input.nbits; i++) {
+        if (input.bits[i] > input.len*8 + input.crc.width - 1) {
+            fprintf(stderr, "bits[%zu]=%zu exceeds message length (%zu bits)\n",
+                    i, input.bits[i], input.len*8 + input.crc.width-1);
+            return 3;
         }
-        *size += fread(&msg[*size], sizeof(u8), capacity-*size, in);
-        if (ferror(in))
-            goto fail;
+
+        if (input.bits[i] > input.bits[j])
+            j = i;
+    }
+    if (input.nbits && input.bits[j] >= input.len*8) {
+        size_t left;
+        u8 padding[256];
+        memset(padding, 0, sizeof(padding));
+        input.pad = 1 + (input.bits[j] - input.len*8) / 8;
+        input.len += input.pad;
+        left = input.pad;
+        while (left > 0) {
+            size_t n = (left < sizeof(padding)) ? left : sizeof(padding);
+            crc_append(&input.crc, padding, n, &input.checksum);
+            left -= n;
+        }
+        if (input.verbose >= 1)
+            fprintf(stderr, "input message padded by %zu bytes\n", input.pad);
     }
 
-    /* Truncate */
-    if (0 < *size && *size < capacity && (new = realloc(msg, *size)))
-        msg = new;
-    return msg;
+    /* Create sparse CRC calculation engine */
+    if (!(input.sparse = crc_sparse_new(&input.crc, 8*input.len))) {
+        fprintf(stderr, "no sparse CRC engine (crchack may be slow)\n");
+        return 5;
+    }
 
-fail:
-    free(msg);
-    return NULL;
+    return 0;
 }
 
 static FILE *handle_message_file(const char *filename, size_t *size)
@@ -329,7 +332,7 @@ static FILE *handle_message_file(const char *filename, size_t *size)
     if (!bigint_init(&input.checksum, input.crc.width))
         return NULL;
     bigint_load_zeros(&input.checksum);
-    crc(NULL, (*size = 0), &input.crc, &input.checksum);
+    crc(&input.crc, NULL, (*size = 0), &input.checksum);
 
     /* Get input stream for calculating CRC */
     if ((in = !strcmp(filename, "-") ? stdin : fopen(filename, "rb")) == NULL) {
@@ -337,30 +340,28 @@ static FILE *handle_message_file(const char *filename, size_t *size)
         return NULL;
     }
 
-    if (input.has_target && (in == stdin || fgetpos(in, &start) != 0)) {
-        /*
-         * Modifying input message but got a non-seekable file stream.
-         * As a workaround, copy the input message to a temporary file.
-         */
-        if (input.verbose >= 1)
-            fputs("creating temporary file to store input message\n", stderr);
-        if (!(temp = tmpfile())) {
-            fputs("error creating temporary file for input message\n", stderr);
-            goto fail;
-        }
-    } else {
-        temp = NULL;
-    }
-
+    temp = NULL;
     if (input.has_target) {
-        /* Get position for rewinding */
+        if (in == stdin || fgetpos(in, &start) != 0) {
+            /*
+             * Modifying input message but got a non-seekable file stream.
+             * As a workaround, copy the input message to a temporary file.
+             */
+            if (input.verbose >= 1)
+                fputs("creating temp file to store input message\n", stderr);
+            if (!(temp = tmpfile())) {
+                fputs("error creating temp file for input message\n", stderr);
+                goto fail;
+            }
+        }
         if (fgetpos(temp ? temp : in, &start) != 0) {
             fputs("fgetpos() error for ", stderr);
-            if (temp) fputs("temporary copy of ", stderr);
+            if (temp) fputs("temp file of ", stderr);
             fprintf(stderr, "input file '%s'\n", filename);
             goto fail;
         }
     }
+
     while (!feof(in)) {
         size_t n = fread(buf, sizeof(char), BUFSIZ, in);
         if (ferror(in)) {
@@ -369,53 +370,42 @@ static FILE *handle_message_file(const char *filename, size_t *size)
         } else if (temp) {
             size_t i = 0;
             while (i < n) {
-                size_t m = fwrite(buf, sizeof(char), n - i, temp);
+                size_t m = fwrite(buf + i, sizeof(char), n - i, temp);
                 if (!m || ferror(temp)) {
-                    fputs("error writing to temporary file\n", stderr);
+                    fputs("error writing to temp file\n", stderr);
                     goto fail;
                 }
                 i += m;
             }
         }
-        crc_append(buf, n, &input.crc, &input.checksum);
+        crc_append(&input.crc, buf, n, &input.checksum);
         *size += n;
     }
+
     if (input.has_target) {
         /* Rewind */
-        if (fsetpos(temp ? temp : in, &start) != 0) {
+        if (temp) {
+            fclose(in);
+            in = temp;
+        }
+        if (fsetpos(in, &start) != 0) {
             fputs("fsetpos() error for ", stderr);
-            if (temp) fputs("temporary copy of ", stderr);
+            if (temp) fputs("temporary file of ", stderr);
             fprintf(stderr, "input file '%s'\n", filename);
             goto fail;
         }
-
     }
 
-    if (temp) {
-        fclose(in);
-        in = temp;
-    }
-    if (input.has_target) {
-        /* TODO: Remove this once forging supports chunk-based processing */
-        size_t len;
-        if (!(input.msg = read_input_message(in, &len)) || len != *size) {
-            fputs("error reading input message from ", stderr);
-            if (temp) fputs("temporary copy of ", stderr);
-            fprintf(stderr, "input message file '%s'\n", filename);
-            fclose(in);
-            in = NULL;
-        }
-    }
     return in;
 
 fail:
-    if (temp != NULL)
+    if (input.has_target && temp != NULL)
         fclose(temp);
     fclose(in);
     return NULL;
 }
 
-/**
+/*
  * Recursive descent parser for slices (-b).
  */
 static const char peek(const char **pp)
@@ -561,7 +551,7 @@ static int parse_slice(const char *p, struct slice *slice)
     return 1;
 }
 
-/**
+/*
  * Extract bits of a slice.
  *
  * Returns the number of bits in the given slice.
@@ -589,14 +579,94 @@ static size_t bits_of_slice(struct slice *slice, size_t end, size_t *bits)
     return n;
 }
 
-static void input_crc(const void *msg, size_t len, struct bigint *checksum)
+static void input_crc(size_t len, struct bigint *checksum)
 {
-    crc(msg, len, &input.crc, checksum);
+    if (len >= 8*input.len) {
+        bigint_mov(checksum, &input.checksum);
+    } else {
+        const size_t pos = input.crc.reflect_in
+                         ? len : (len & ~7) | (7 - (len & 7));
+        bigint_mov(checksum, &input.checksum);
+        crc_sparse_1bit(input.sparse, pos, checksum);
+    }
 }
+
+/* Input array A[l..r] and work array B[l..r] */
+static void merge_sort(size_t *A, size_t l, size_t r, size_t *B)
+{
+    const size_t m = (r + l) / 2;
+    if (l < m) {
+        size_t i, j, k;
+        merge_sort(B, l, m, A);
+        merge_sort(A, m, r, B);
+        i = l; j = m; k = l;
+        while (k < j) {
+            if (j == r || (i < m && B[i] <= A[j])) {
+                A[k++] = B[i++];
+            } else {
+                A[k++] = A[j++];
+            }
+        }
+    }
+}
+
+static int write_adjusted_message(FILE *in, size_t flips[], size_t n, FILE *out)
+{
+    char buf[BUFSIZ];
+    size_t m, size, *work = calloc(n, sizeof(size_t));
+    if (!work) return 0;
+    for (m = 0; m < n; work[m] = flips[m], m++);
+    merge_sort(flips, 0, n, work);
+    free(work);
+
+    m = size = 0;
+    while (size < input.len) {
+        size_t i, j;
+        if (size >= input.len - input.pad) {
+            j = (input.len - size) < BUFSIZ ? (input.len - size) : BUFSIZ;
+            memset(&buf, 0, j);
+        } else if (!feof(in)) {
+            j = fread(buf, sizeof(char), BUFSIZ, in);
+            if (ferror(in)) {
+                fputs("error reading input message\n", stderr);
+                return 0;
+            }
+        } else {
+            fprintf(stderr, "adjusted message has wrong length: %zu != %zu\n",
+                    size, input.len);
+            return 0;
+        }
+
+        while (m < n && flips[m] / 8 < size + j) {
+            buf[(flips[m] / 8) - size] ^= 1 << (flips[m] % 8);
+            m++;
+        }
+
+        i = 0;
+        while (i < j) {
+            size_t ret = fwrite(buf + i, sizeof(char), j - i, out);
+            if (!ret || ferror(out)) {
+                fputs("error writing adjusted message\n", stderr);
+                return 0;
+            }
+            i += ret;
+        }
+        size += i;
+    }
+
+    if (size != input.len) {
+        fprintf(stderr, "adjusted message has wrong length: %zu != %zu\n",
+                size, input.len);
+        return 0;
+    }
+
+    return 1;
+}
+
 
 int main(int argc, char *argv[])
 {
-    int exit_code, i, j, ret;
+    int exit_code, i, ret;
     u8 *out = NULL;
 
     /* Parse command-line */
@@ -611,83 +681,34 @@ int main(int argc, char *argv[])
         goto finish;
     }
 
-    /* Check bits array and pad the message buffer if needed */
-    for (i = j = 0; i < input.nbits; i++) {
-        if (input.bits[i] > input.len*8 + input.crc.width - 1) {
-            fprintf(stderr, "bits[%d]=%zu exceeds message length (%zu bits)\n",
-                    i, input.bits[i], input.len*8 + input.crc.width-1);
-            exit_code = 3;
-            goto finish;
-        }
-
-        if (input.bits[i] > input.bits[j])
-            j = i;
-    }
-    if (input.nbits && input.bits[j] >= input.len*8) {
-        u8 *new;
-        int pad_size = 1 + (input.bits[j] - input.len*8) / 8;
-        if (!(new = realloc(input.msg, input.len + pad_size))) {
-            fprintf(stderr, "reallocating message buffer failed\n");
-            exit_code = 4;
-            goto finish;
-        }
-        input.msg = new;
-
-        memset(&input.msg[input.len], 0, pad_size);
-        input.len += pad_size;
-
-        if (input.verbose >= 1) {
-            fprintf(stderr, "input message padded by %d bytes\n", pad_size);
-        }
-    }
-
     /* Allocate output buffer for the modified message */
     if (!(out = malloc(input.len))) {
-        fprintf(stderr, "error allocating output buffer\n");
+        fputs("error allocating output buffer\n", stderr);
         exit_code = 4;
         goto finish;
     }
 
     /* Forge */
-    ret = forge(input.msg, input.len, &input.target, input_crc,
+    ret = forge(input.len, &input.target, input_crc,
                 input.bits, input.nbits, out);
+
+    if (ret < 0) {
+        fprintf(stderr, "FAIL! try giving %d mutable bits more (got %zu)\n",
+                -ret, input.nbits);
+        exit_code = 6;
+        goto finish;
+    }
 
     /* Show flipped bits */
     if (input.verbose >= 1) {
-        for (i = 0; i < ret; i++) {
-            for (j = i; j < ret; j++) {
-                if (input.bits[j] < input.bits[i]) {
-                    size_t tmp = input.bits[i];
-                    input.bits[i] = input.bits[j];
-                    input.bits[j] = tmp;
-                }
-            }
-        }
         fprintf(stderr, "flip[%d] = {", ret);
         for (i = 0; i < ret; i++)
             fprintf(stderr, &", %zu.%zu"[!i], input.bits[i]/8, input.bits[i]%8);
         fprintf(stderr, " }\n");
     }
 
-    if (ret >= 0) {
-        /* Write the result to stdout */
-        u8 *ptr = &out[0];
-        size_t left = input.len;
-        while (left > 0) {
-            size_t written = fwrite(ptr, sizeof(u8), left, stdout);
-            if (written <= 0 || ferror(stdout)) {
-                fprintf(stderr, "error writing result to stdout\n");
-                exit_code = 5;
-                goto finish;
-            }
-            left -= written;
-            ptr += written;
-        }
-        fflush(stdout);
-    } else {
-        fprintf(stderr, "FAIL! try giving %d mutable bits more (got %zu)\n",
-                -ret, input.nbits);
-        exit_code = 6;
+    if (!write_adjusted_message(input.in, input.bits, ret, input.out)) {
+        exit_code = 7;
         goto finish;
     }
 
@@ -695,8 +716,9 @@ int main(int argc, char *argv[])
     exit_code = 0;
 
 finish:
-    if (input.file)
-        fclose(input.file);
+    if (input.in) fclose(input.in);
+    if (input.out) fclose(input.out);
+    crc_sparse_delete(input.sparse);
     bigint_destroy(&input.checksum);
     bigint_destroy(&input.target);
     bigint_destroy(&input.crc.poly);
@@ -704,7 +726,6 @@ finish:
     bigint_destroy(&input.crc.xor_out);
     free(input.slices);
     free(input.bits);
-    free(input.msg);
     free(out);
     return exit_code;
 }
