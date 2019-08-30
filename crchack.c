@@ -315,7 +315,7 @@ static int handle_options(int argc, char *argv[])
 
     /* Create sparse CRC calculation engine */
     if (!(input.sparse = crc_sparse_new(&input.crc, 8*input.len))) {
-        fprintf(stderr, "no sparse CRC engine (crchack may be slow)\n");
+        fputs("error initializing sparse CRC engine (bad params?)\n", stderr);
         return 5;
     }
 

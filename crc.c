@@ -128,7 +128,8 @@ struct crc_sparse *crc_sparse_new(const struct crc_config *crc, size_t size)
 
     /* Special case for short messages */
     if (size < w) {
-        engine = malloc(sizeof(struct crc_sparse) + (w / 8) + !!(w % 8));
+        if (!(engine = malloc(sizeof(struct crc_sparse) + (w / 8) + !!(w % 8))))
+            return NULL;
         memcpy(&engine->crc, crc, sizeof(struct crc_config));
         engine->size = size;
         engine->D = engine->L = engine->R = NULL;
