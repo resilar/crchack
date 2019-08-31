@@ -591,33 +591,43 @@ static void input_crc(size_t len, struct bigint *checksum)
     }
 }
 
-/* Input array A[l..r] and work array B[l..r] */
-static void merge_sort(size_t *A, size_t l, size_t r, size_t *B)
+/* Input array A[0..n] and work array B[0..n] */
+static void merge_sort_recurse(size_t *A, size_t n, size_t *B)
 {
-    const size_t m = (r + l) / 2;
-    if (l < m) {
+    const size_t m = n / 2;
+    if (m > 0) {
         size_t i, j, k;
-        merge_sort(B, l, m, A);
-        merge_sort(A, m, r, B);
-        i = l; j = m; k = l;
-        while (k < j) {
-            if (j == r || (i < m && B[i] <= A[j])) {
-                A[k++] = B[i++];
+        merge_sort_recurse(B, m, A);
+        merge_sort_recurse(A+m, n-m, B+m);
+        for (i = j = 0, k = m; i < k; i++) {
+            if (k == n || (j < m && B[j] <= A[k])) {
+                A[i] = B[j++];
             } else {
-                A[k++] = A[j++];
+                A[i] = A[k++];
             }
         }
     }
 }
 
+static int merge_sort(size_t *A, size_t n)
+{
+    size_t *B;
+    if ((B = calloc(n, sizeof(size_t)))) {
+        memcpy(B, A, n * sizeof(size_t));
+        merge_sort_recurse(A, n, B);
+        free(B);
+    }
+    return !!B;
+}
+
 static int write_adjusted_message(FILE *in, size_t flips[], size_t n, FILE *out)
 {
     char buf[BUFSIZ];
-    size_t m, size, *work = calloc(n, sizeof(size_t));
-    if (!work) return 0;
-    for (m = 0; m < n; work[m] = flips[m], m++);
-    merge_sort(flips, 0, n, work);
-    free(work);
+    size_t m, size;
+    if (!merge_sort(flips, n)) {
+        fputs("out of memory for merge sort work space\n", stderr);
+        return 0;
+    }
 
     m = size = 0;
     while (size < input.len) {
