@@ -622,7 +622,6 @@ static int merge_sort(size_t *A, size_t n)
 
 static int write_adjusted_message(FILE *in, size_t flips[], size_t n, FILE *out)
 {
-    char buf[BUFSIZ];
     size_t m, size;
     if (!merge_sort(flips, n)) {
         fputs("out of memory for merge sort work space\n", stderr);
@@ -632,6 +631,7 @@ static int write_adjusted_message(FILE *in, size_t flips[], size_t n, FILE *out)
     m = size = 0;
     while (size < input.len) {
         size_t i, j;
+        char buf[BUFSIZ];
         if (size >= input.len - input.pad) {
             j = (input.len - size) < BUFSIZ ? (input.len - size) : BUFSIZ;
             memset(&buf, 0, j);
@@ -639,12 +639,12 @@ static int write_adjusted_message(FILE *in, size_t flips[], size_t n, FILE *out)
             j = fread(buf, sizeof(char), BUFSIZ, in);
             if (ferror(in)) {
                 fputs("error reading input message\n", stderr);
-                return 0;
+                break;
             }
         } else {
             fprintf(stderr, "adjusted message has wrong length: %zu != %zu\n",
                     size, input.len);
-            return 0;
+            break;
         }
 
         while (m < n && flips[m] / 8 < size + j) {
@@ -664,13 +664,7 @@ static int write_adjusted_message(FILE *in, size_t flips[], size_t n, FILE *out)
         size += i;
     }
 
-    if (size != input.len) {
-        fprintf(stderr, "adjusted message has wrong length: %zu != %zu\n",
-                size, input.len);
-        return 0;
-    }
-
-    return 1;
+    return size == input.len;
 }
 
 
