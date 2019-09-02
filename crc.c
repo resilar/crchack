@@ -145,19 +145,18 @@ struct crc_sparse *crc_sparse_new(const struct crc_config *crc, size_t size)
     engine = malloc(sizeof(struct crc_sparse));
     D = engine ? bigint_array_new((1 + 2 * n + 2) * w, w) : NULL;
     buf = D ? calloc(sizeof(uint8_t), ((2*w) / 8) + !!((2*w) % 8)) : NULL;
-    if (bigint_init(&z, w)) {
-        memcpy(&engine->crc, crc, sizeof(struct crc_config));
-        engine->size = size;
-        engine->D = D;
-        engine->L = L = &D[1 * w];
-        engine->R = R = &L[n * w];
-        engine->PQ = PQ =  &R[n * w];
-    } else {
+    if (!buf || !bigint_init(&z, w)) {
         free(buf);
         bigint_array_delete(D);
-        crc_sparse_delete(engine);
+        free(engine);
         return NULL;
     }
+    memcpy(&engine->crc, crc, sizeof(struct crc_config));
+    engine->size = size;
+    engine->D = D;
+    engine->L = L = &D[1 * w];
+    engine->R = R = &L[n * w];
+    engine->PQ = PQ =  &R[n * w];
 
     /* Calculate D (differences of bit flips for a w-bit window) */
     crc_bits(crc, buf, 0, w, &z);

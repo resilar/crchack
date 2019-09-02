@@ -31,10 +31,11 @@ static inline size_t bigint_limbs(const struct bigint *dest)
 /* Initialize bigint structure */
 static inline struct bigint *bigint_init(struct bigint *dest, size_t bits)
 {
-    if ((dest->limb = calloc(BITS_TO_LIMBS(bits), sizeof(limb_t)))) {
+    if (bits && (dest->limb = calloc(BITS_TO_LIMBS(bits), sizeof(limb_t)))) {
         dest->bits = bits;
         return dest;
     }
+    dest->limb = NULL;
     dest->bits = 0;
     return NULL;
 }
