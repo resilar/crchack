@@ -408,10 +408,27 @@ fail:
 /*
  * Recursive descent parser for slices (-b).
  */
-static const char peek(const char **pp)
+static int peek(const char **pp)
 {
     while (**pp == ' ') pp++;
     return **pp;
+}
+
+static int accept(const char **pp, char c)
+{
+    if (peek(pp) == c) {
+        *pp += peek(pp) == c;
+        return c;
+    }
+    return 0;
+}
+
+static int accept_any(const char **pp, const char *set)
+{
+    int c;
+    for (c = peek(pp); c != *set && *set; set++);
+    *pp += !!*set;
+    return *set;
 }
 
 static const char *parse_expression(const char *p, ssize_t *value);
@@ -421,21 +438,19 @@ static const char *parse_factor(const char *p, ssize_t *value)
     case '0': case'1': case '2': case '3': case '4':
     case '5': case'6': case '7': case '8': case '9':
         if (p[0] == '0' && p[1] == 'x') {
-            sscanf(p, "0x%zx", (size_t *)value);
-            p += 2;
-            while (strchr("0123456789abcdefABCDEF", *p)) p++;
+            sscanf((p += 2), "%zx", (size_t *)value);
+            while (accept_any(&p, "0123456789abcdefABCDEF"));
         } else {
             sscanf(p, "%zd", value);
-            while (*p >= '0' && *p <= '9') p++;
+            while (accept_any(&p, "0123456789"));
         }
         break;
     case '(':
         if ((p = parse_expression(p+1, value))) {
-            if (peek(&p) != ')') {
+            if (!accept(&p, ')')) {
                 fprintf(stderr, "missing ')' in slice\n");
                 return NULL;
             }
-            p++;
         }
         break;
     default:
@@ -447,10 +462,11 @@ static const char *parse_factor(const char *p, ssize_t *value)
 
 static const char *parse_unary(const char *p, ssize_t *value)
 {
-    char op = peek(&p);
-    if (op == '+' || op == '-') {
-        p = parse_unary(p+1, value);
-        if (op == '-') *value = -(*value);
+    if (accept(&p, '+')) {
+        p = parse_unary(p, value);
+    } else if (accept(&p, '-')) {
+        if ((p = parse_unary(p, value)))
+            *value = -(*value);
     } else {
         p = parse_factor(p, value);
     }
@@ -461,7 +477,7 @@ static const char *parse_muldiv(const char *p, ssize_t *value)
 {
     if ((p = parse_unary(p, value))) {
         ssize_t rhs;
-        char op = peek(&p);
+        int op = peek(&p);
         while ((op == '*' || op == '/') && (p = parse_unary(p+1, &rhs))) {
             *value = (op == '*') ? *value * rhs : *value / rhs;
             op = peek(&p);
@@ -474,7 +490,7 @@ static const char *parse_addsub(const char *p, ssize_t *value)
 {
     if ((p = parse_muldiv(p, value))) {
         ssize_t rhs;
-        char op = peek(&p);
+        int op = peek(&p);
         while ((op == '+' || op == '-') && (p = parse_muldiv(p+1, &rhs))) {
             *value = (op == '+') ? *value + rhs : *value - rhs;
             op = peek(&p);
@@ -490,13 +506,13 @@ static const char *parse_expression(const char *p, ssize_t *value)
 
 static const char *parse_slice_offset(const char *p, ssize_t *offset)
 {
-    if (peek(&p) == '.') {
-        p = parse_expression(p+1, offset);
+    if (accept(&p, '.')) {
+        p = parse_expression(p, offset);
     } else if ((p = parse_expression(p, offset))) {
         *offset *= 8;
-        if (peek(&p) == '.') {
+        if (accept(&p, '.')) {
             ssize_t byteoffset = *offset;
-            if ((p = parse_expression(p+1, offset)))
+            if ((p = parse_expression(p, offset)))
                 *offset += byteoffset;
         }
     }
@@ -527,16 +543,16 @@ static int parse_slice(const char *p, struct slice *slice)
     if (!peek(&p) || (*p != ':' && !(p = parse_slice_offset(p, &slice->l))))
         return 0;
     slice->r = !peek(&p) ? slice->l+1 : ((size_t)SIZE_MAX >> 1);
-    p += *p == ':';
+    accept(&p, ':');
 
     /* l:R:s */
+    relative = accept(&p, '+');
     if (!peek(&p)) return 1;
-    relative = peek(&p) == '+';
     if (*p != ':' && !(p = parse_slice_offset(p, &slice->r)))
         return 0;
     if (relative)
         slice->r += slice->l;
-    p += *p == ':';
+    accept(&p, ':');
 
     /* l:r:S */
     if (!peek(&p)) return 1;
