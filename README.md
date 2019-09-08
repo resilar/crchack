@@ -133,21 +133,19 @@ illustrates how to convert the CRC catalogue entries to crchack CLI flags.
 
 CRC is often described as a linear function in the literature. However, CRC
 implementations used in practice often differ from the theoretical definition
-and satisfy only a "weaker" linear property:
+and satisfy only a *weak* linearity property (`^` denotes XOR operator):
 
     CRC(x ^ y ^ z) = CRC(x) ^ CRC(y) ^ CRC(z), for |x| = |y| = |z|
 
-The method can be viewed as applying this rule repeatedly to construct an
-invertible system of linear equations. Solving the system tells us which bits
-in the input data need to be flipped.
+crchack applies this rule to construct a system of linear equations such that
+the solution is a set of input bits which inverted yield the target checksum.
 
-The intuition is that flipping each input bit causes a fixed difference in the
+The intuition is that each input bit flip causes a fixed difference in the
 resulting checksum (independent of the values of the neighbouring bits). This,
 in addition to knowing the required difference, produces a system of linear
-equations over [GF(2)](https://en.wikipedia.org/wiki/Finite_field). The system
-of equations can then be expressed in a matrix form and solved with, for
-example, the Gauss-Jordan elimination algorithm. Special care is needed to
-handle overdetermined and underdetermined systems.
+equations over [GF(2)](https://en.wikipedia.org/wiki/Finite_field). crchack
+expresses the system in a matrix form and solves it with the Gauss-Jordan
+elimination algorithm.
 
 Notice that the CRC function is treated as a "black box", i.e., the internal
 CRC parameters are used only for evaluation. Therefore, the same approach is
