@@ -150,7 +150,7 @@ static int handle_options(int argc, char *argv[])
     memset(&input, 0, sizeof(input));
 
     /* Parse command options */
-    while ((c = suckopt(argc, argv, "hvp:w:i:x:rRo:O:b:")) != -1) {
+    while ((c = suckopt(argc, argv, ":hvp:w:i:x:rRo:O:b:")) != -1) {
         switch (c) {
         case 'h': help(argv[0]); return 1;
         case 'v': input.verbose++; break;
@@ -199,13 +199,14 @@ static int handle_options(int argc, char *argv[])
             input.nslices++;
             break;
 
+        case ':':
+            fprintf(stderr, "option -%c requires an argument\n", optopt);
+            return 1;
         case '?':
-            if (strchr("oObwpix", optopt)) {
-                fprintf(stderr, "option -%c requires an argument\n", optopt);
-            } else if (isprint(optopt)) {
-                fprintf(stderr, "unknown option '-%c'\n", optopt);
+            if (isprint(optopt)) {
+                fprintf(stderr, "unknown option -%c\n", optopt);
             } else {
-                fprintf(stderr, "unknown option character '\\x%x'\n", optopt);
+                fprintf(stderr, "bad option character '\\x%x'\n", optopt);
             }
             return 1;
         default:
