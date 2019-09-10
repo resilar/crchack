@@ -5,7 +5,6 @@
 #include "forge.h"
 
 #include <ctype.h>
-#include <getopt.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -41,6 +40,64 @@ struct slice {
 static int parse_slice(const char *p, struct slice *slice);
 static int parse_offset(const char *p, ssize_t *offset);
 static size_t bits_of_slice(struct slice *slice, size_t end, size_t *bits);
+
+/*
+ * POSIXish minimal getopt(3) implementation.
+ */
+static int optind = 1;
+static int optpos = 0;
+static int optopt;
+static char *optarg;
+static int suckopt(int argc, char * const argv[], const char *optstring)
+{
+    const char *p;
+    optopt = 0;
+    optarg = (char *)0;
+    if (!optind) {
+        optpos = 0;
+        optind = 1;
+    }
+
+    if (!optpos) {
+        if (optind < argc && argv[optind]) {
+            if (argv[optind][0] == '-' && argv[optind][1]) {
+                if (argv[optind][1] != '-') {
+                    optpos = 1;
+                } else if (!argv[optind][2]) {
+                    optopt = '-';
+                    optind++;
+                }
+            } else if (optstring[0] == '-') {
+                optarg = argv[optind++];
+                return 1;
+            }
+        }
+        if (!optpos)
+            return -1;
+    }
+
+    optopt = argv[optind][optpos++];
+    if (!argv[optind][optpos]) {
+        optpos = 0;
+        optind++;
+    }
+
+    if (optstring[0] == '-' || optstring[0] == '+')
+        optstring++;
+    for (p = optstring; *p && (*p == ':' || *p != optopt); p++);
+    if (p[0] != optopt)
+        return '?';
+
+    if (p[1] == ':') {
+        if (p[2] != ':' || optpos) {
+            if (optind >= argc)
+                return "?:"[optstring[0] == ':'];
+            optarg = argv[optind++] + optpos;
+            optpos = 0;
+        }
+    }
+    return optopt;
+}
 
 /*
  * User input and options.
@@ -93,7 +150,7 @@ static int handle_options(int argc, char *argv[])
     memset(&input, 0, sizeof(input));
 
     /* Parse command options */
-    while ((c = getopt(argc, argv, "hvp:w:i:x:rRo:O:b:")) != -1) {
+    while ((c = suckopt(argc, argv, "hvp:w:i:x:rRo:O:b:")) != -1) {
         switch (c) {
         case 'h': help(argv[0]); return 1;
         case 'v': input.verbose++; break;
