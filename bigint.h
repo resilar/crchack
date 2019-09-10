@@ -207,7 +207,6 @@ static inline struct bigint *bigint_shr_1(struct bigint *dest)
     return dest;
 }
 
-
 /* Reverse the bits in a bigint (LSB becomes MSB and vice versa and so on) */
 static inline struct bigint *bigint_reflect(struct bigint *dest)
 {

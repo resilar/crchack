@@ -12,9 +12,6 @@
 #include <string.h>
 #include <unistd.h>
 
-/*
- * Usage.
- */
 static void help(char *argv0)
 {
     fprintf(stderr, "usage: %s [options] file [target_checksum]\n", argv0);
@@ -271,7 +268,12 @@ static int handle_options(int argc, char *argv[])
 
         /* Handle '-oO' offsets */
         if (has_offset || !input.slices) {
-            if (has_offset != 'o')
+            int negative = has_offset != 'o';
+            if (offset < 0) {
+                negative = !negative;
+                offset = -offset;
+            }
+            if (negative)
                 offset = input.len*8 - offset;
             for (i = 0; i < input.crc.width; i++)
                 input.bits[input.nbits++] = offset + i;
@@ -682,7 +684,6 @@ static int write_adjusted_message(FILE *in, size_t flips[], size_t n, FILE *out)
 
     return size == input.len;
 }
-
 
 int main(int argc, char *argv[])
 {
