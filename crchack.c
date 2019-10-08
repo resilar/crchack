@@ -42,65 +42,65 @@ static int parse_offset(const char *p, ssize_t *offset);
 static size_t bits_of_slice(struct slice *slice, size_t end, size_t *bits);
 
 /*
- * POSIXish minimal getopt(3) implementation.
+ * suckopts(): POSIXish minimal getopt(3) implementation.
  */
-static int optind = 1;
-static int optpos = 0;
-static int optopt;
-static char *optarg;
-static int suckopt(int argc, char * const argv[], const char *optstring)
+static int suckind = 1;
+static int suckpos = 0;
+static int suckopt;
+static char *suckarg;
+static int suckopts(int argc, char * const argv[], const char *suckstring)
 {
     const char *p;
-    optopt = 0;
-    optarg = (char *)0;
-    if (!optind) {
-        optpos = 0;
-        optind = 1;
+    suckopt = 0;
+    suckarg = (char *)0;
+    if (!suckind) {
+        suckpos = 0;
+        suckind = 1;
     }
 
-    if (!optpos) {
-        if (optind < argc && argv[optind]) {
-            if (argv[optind][0] == '-' && argv[optind][1]) {
-                if (argv[optind][1] != '-') {
-                    optpos = 1;
-                } else if (!argv[optind][2]) {
-                    optopt = '-';
-                    optind++;
+    if (!suckpos) {
+        if (suckind < argc && argv[suckind]) {
+            if (argv[suckind][0] == '-' && argv[suckind][1]) {
+                if (argv[suckind][1] != '-') {
+                    suckpos = 1;
+                } else if (!argv[suckind][2]) {
+                    suckopt = '-';
+                    suckind++;
                 }
-            } else if (optstring[0] == '-') {
-                optarg = argv[optind++];
+            } else if (suckstring[0] == '-') {
+                suckarg = argv[suckind++];
                 return 1;
             }
         }
-        if (!optpos)
+        if (!suckpos)
             return -1;
     }
 
-    optopt = argv[optind][optpos++];
-    if (!argv[optind][optpos]) {
-        optpos = 0;
-        optind++;
+    suckopt = argv[suckind][suckpos++];
+    if (!argv[suckind][suckpos]) {
+        suckpos = 0;
+        suckind++;
     }
 
-    if (optstring[0] == '-' || optstring[0] == '+')
-        optstring++;
-    for (p = optstring; *p && (*p == ':' || *p != optopt); p++);
-    if (p[0] != optopt)
+    if (suckstring[0] == '-' || suckstring[0] == '+')
+        suckstring++;
+    for (p = suckstring; *p && (*p == ':' || *p != suckopt); p++);
+    if (p[0] != suckopt)
         return '?';
 
     if (p[1] == ':') {
-        if (p[2] != ':' || optpos) {
-            if (optind >= argc)
-                return "?:"[optstring[0] == ':'];
-            optarg = argv[optind++] + optpos;
-            optpos = 0;
+        if (p[2] != ':' || suckpos) {
+            if (suckind >= argc)
+                return "?:"[suckstring[0] == ':'];
+            suckarg = argv[suckind++] + suckpos;
+            suckpos = 0;
         }
     }
-    return optopt;
+    return suckopt;
 }
 
 /*
- * User input and options.
+ * User input and suckions.
  */
 static struct {
     char *filename;
@@ -150,19 +150,19 @@ static int handle_options(int argc, char *argv[])
     memset(&input, 0, sizeof(input));
 
     /* Parse command options */
-    while ((c = suckopt(argc, argv, ":hvp:w:i:x:rRo:O:b:")) != -1) {
+    while ((c = suckopts(argc, argv, ":hvp:w:i:x:rRo:O:b:")) != -1) {
         switch (c) {
         case 'h': help(argv[0]); return 1;
         case 'v': input.verbose++; break;
-        case 'p': poly = optarg; break;
+        case 'p': poly = suckarg; break;
         case 'w':
-            if (sscanf(optarg, "%zu", &width) != 1) {
-                fprintf(stderr, "invalid CRC width '%s'\n", optarg);
+            if (sscanf(suckarg, "%zu", &width) != 1) {
+                fprintf(stderr, "invalid CRC width '%s'\n", suckarg);
                 return 1;
             }
             break;
-        case 'i': init = optarg; break;
-        case 'x': xor_out = optarg; break;
+        case 'i': init = suckarg; break;
+        case 'x': xor_out = suckarg; break;
         case 'r': reflect_in = 1; break;
         case 'R': reflect_out = 1; break;
         case 'o': case 'O':
@@ -170,8 +170,8 @@ static int handle_options(int argc, char *argv[])
                 fprintf(stderr, "multiple -oO not allowed\n");
                 return 1;
             }
-            if (!parse_offset(optarg, &offset)) {
-                fprintf(stderr, "invalid offset '%s'\n", optarg);
+            if (!parse_offset(suckarg, &offset)) {
+                fprintf(stderr, "invalid offset '%s'\n", suckarg);
                 return 1;
             }
             has_offset = c;
@@ -192,21 +192,21 @@ static int handle_options(int argc, char *argv[])
                 }
                 input.slices = new;
             }
-            if (!parse_slice(optarg, &input.slices[input.nslices])) {
-                fprintf(stderr, "invalid slice '%s'\n", optarg);
+            if (!parse_slice(suckarg, &input.slices[input.nslices])) {
+                fprintf(stderr, "invalid slice '%s'\n", suckarg);
                 return 1;
             }
             input.nslices++;
             break;
 
         case ':':
-            fprintf(stderr, "option -%c requires an argument\n", optopt);
+            fprintf(stderr, "option -%c requires an argument\n", suckopt);
             return 1;
         case '?':
-            if (isprint(optopt)) {
-                fprintf(stderr, "unknown option -%c\n", optopt);
+            if (isprint(suckopt)) {
+                fprintf(stderr, "unknown option -%c\n", suckopt);
             } else {
-                fprintf(stderr, "bad option character '\\x%x'\n", optopt);
+                fprintf(stderr, "bad option character '\\x%x'\n", suckopt);
             }
             return 1;
         default:
@@ -216,12 +216,12 @@ static int handle_options(int argc, char *argv[])
     }
 
     /* Determine input file argument position */
-    if (optind == argc || optind+2 < argc) {
+    if (suckind == argc || suckind+2 < argc) {
         help(argv[0]);
         return 1;
     }
-    input.filename = argv[optind];
-    target = (optind == argc-2) ? argv[argc-1] : NULL;
+    input.filename = argv[suckind];
+    target = (suckind == argc-2) ? argv[argc-1] : NULL;
 
     /* CRC parameters */
     if (!width && poly) {
