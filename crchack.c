@@ -5,6 +5,7 @@
 #include "forge.h"
 
 #include <ctype.h>
+#include <errno.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -37,8 +38,8 @@ struct slice {
     ssize_t s;
 };
 
-static int parse_slice(const char *p, struct slice *slice);
 static int parse_offset(const char *p, ssize_t *offset);
+static int parse_slice(const char *p, struct slice *slice);
 static size_t bits_of_slice(struct slice *slice, size_t end, size_t *bits);
 
 /*
@@ -206,7 +207,7 @@ static int handle_options(int argc, char *argv[])
             if (isprint(suckopt)) {
                 fprintf(stderr, "unknown option -%c\n", suckopt);
             } else {
-                fprintf(stderr, "bad option character '\\x%x'\n", suckopt);
+                fprintf(stderr, "unknown option \"\\x%02X\"\n", suckopt);
             }
             return 1;
         default:
@@ -320,7 +321,7 @@ static int handle_options(int argc, char *argv[])
 
         for (i = 0; i < input.nslices; i++) {
             size_t n = bits_of_slice(&input.slices[i], input.len * 8,
-                                     &input.bits[input.nbits]);
+                    &input.bits[input.nbits]);
             input.nbits += n;
         }
 
@@ -474,49 +475,70 @@ static int peek(const char **pp)
     return **pp;
 }
 
-static int accept(const char **pp, char c)
+static int accept(const char **pp, char ch)
 {
-    if (peek(pp) == c) {
-        *pp += peek(pp) == c;
-        return c;
-    }
-    return 0;
+    return (peek(pp) == ch && *pp) ? *(*pp)++ : 0;
 }
 
 static int accept_any(const char **pp, const char *set)
 {
-    int c;
-    for (c = peek(pp); c != *set && *set; set++);
-    *pp += !!*set;
-    return *set;
+    int ch = peek(pp);
+    while (*set && ch != *set) set++;
+    return *set ? accept(pp, ch) : 0;
 }
 
 static const char *parse_expression(const char *p, ssize_t *value);
 static const char *parse_factor(const char *p, ssize_t *value)
 {
+    int dot = accept(&p, '.');
+
     switch (peek(&p)) {
     case '0': case'1': case '2': case '3': case '4':
     case '5': case'6': case '7': case '8': case '9':
+        errno = 0;
         if (p[0] == '0' && p[1] == 'x') {
-            sscanf((p += 2), "%zx", (size_t *)value);
-            while (accept_any(&p, "0123456789abcdefABCDEF"));
+            *value = (ssize_t)strtoull(p + 2, (char **)&p, 16);
+            if (errno) perror("invalid unsigned hex integer");
         } else {
-            sscanf(p, "%zd", value);
-            while (accept_any(&p, "0123456789"));
+            *value = (ssize_t)strtoll(p, (char **)&p, 10);
+            if (errno) perror("invalid signed integer");
         }
-        break;
+        if (errno) {
+            p = NULL;
+        } else if (!p) {
+            fprintf(stderr, "invalid integer\n");
+        } else if (!dot) {
+            *value *= 8;
+            if (peek(&p) == '.') {
+                ssize_t bits;
+                if ((p = parse_factor(p, &bits)))
+                    *value += bits;
+            }
+    }
+    break;
+
     case '(':
-        if ((p = parse_expression(p+1, value))) {
-            if (!accept(&p, ')')) {
-                fprintf(stderr, "missing ')' in slice\n");
+        if (!dot) {
+            if ((p = parse_expression(p+1, value)) && !accept(&p, ')')) {
+                fprintf(stderr, "missing parenthesis ')'\n");
                 return NULL;
             }
+            break;
         }
-        break;
+        /* fall-through */
+
     default:
-        fprintf(stderr, "unexpected character '%c' in slice\n", *p);
-        return NULL;
+        if (isprint(*p)) {
+            fprintf(stderr, "unexpected character '%c'\n", *p);
+        } else if (*p == '\0') {
+            fprintf(stderr, "unexpected EOF\n");
+        } else {
+            fprintf(stderr, "bad character \"\\x%02X\"\n", *p);
+        }
+        p = NULL;
+        break;
     }
+
     return p;
 }
 
@@ -536,12 +558,10 @@ static const char *parse_unary(const char *p, ssize_t *value)
 static const char *parse_muldiv(const char *p, ssize_t *value)
 {
     if ((p = parse_unary(p, value))) {
+        int op;
         ssize_t rhs;
-        int op = peek(&p);
-        while ((op == '*' || op == '/') && (p = parse_unary(p+1, &rhs))) {
-            *value = (op == '*') ? *value * rhs : *value / rhs;
-            op = peek(&p);
-        }
+        while ((op = accept_any(&p, "*/")) && (p = parse_unary(p, &rhs)))
+            *value = (op == '*') ? (*value * rhs / 8) : 8 * *value / rhs;
     }
     return p;
 }
@@ -549,47 +569,40 @@ static const char *parse_muldiv(const char *p, ssize_t *value)
 static const char *parse_addsub(const char *p, ssize_t *value)
 {
     if ((p = parse_muldiv(p, value))) {
+        int op;
         ssize_t rhs;
-        int op = peek(&p);
-        while ((op == '+' || op == '-') && (p = parse_muldiv(p+1, &rhs))) {
+        while ((op = accept_any(&p, "+-")) && (p = parse_muldiv(p, &rhs)))
             *value = (op == '+') ? *value + rhs : *value - rhs;
-            op = peek(&p);
-        }
     }
     return p;
 }
 
 static const char *parse_expression(const char *p, ssize_t *value)
 {
+    *value = 0;
     return parse_addsub(p, value);
 }
 
 static const char *parse_slice_offset(const char *p, ssize_t *offset)
 {
-    if (accept(&p, '.')) {
-        p = parse_expression(p, offset);
-    } else if ((p = parse_expression(p, offset))) {
-        *offset *= 8;
-        if (accept(&p, '.')) {
-            ssize_t byteoffset = *offset;
-            if ((p = parse_expression(p, offset)))
-                *offset += byteoffset;
+    if ((p = parse_expression(p, offset))) {
+        if (peek(&p) != '\0' && peek(&p) != ':') {
+            fprintf(stderr, "junk '%s' after slice offset\n", p);
+            p = NULL;
         }
-    }
-    if (p && peek(&p) != '\0' && peek(&p) != ':') {
-        fprintf(stderr, "junk '%s' after slice offset\n", p);
-        return NULL;
     }
     return p;
 }
 
 static int parse_offset(const char *p, ssize_t *offset)
 {
-    if ((p = parse_slice_offset(p, offset)) && peek(&p)) {
-        fprintf(stderr, "junk '%s' after offset\n", p);
-        return 0;
+    if ((p = parse_slice_offset(p, offset))) {
+        if (peek(&p)) {
+            fprintf(stderr, "junk '%s' after offset\n", p);
+            p = NULL;
+        }
     }
-    return 1;
+    return p != NULL;
 }
 
 static int parse_slice(const char *p, struct slice *slice)
