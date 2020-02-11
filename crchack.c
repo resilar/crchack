@@ -470,7 +470,7 @@ fail:
  */
 static int peek(const char **pp)
 {
-    while (**pp == ' ') pp++;
+    while (**pp == ' ') (*pp)++;
     return **pp;
 }
 
