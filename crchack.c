@@ -520,8 +520,14 @@ static const char *parse_factor(const char *p, ssize_t *value)
     case '(':
         if (!dot) {
             if ((p = parse_expression(p+1, value)) && !accept(&p, ')')) {
-                fprintf(stderr, "missing parenthesis ')'\n");
-                return NULL;
+                int i;
+                for (i = 0; p[i] && p[i] != ')'; i++);
+                if (p[i] == ')') {
+                    fprintf(stderr, "junk before ')': '%.*s'\n", i, p);
+                } else {
+                    fprintf(stderr, "missing parenthesis ')'\n");
+                }
+                p = NULL;
             }
             break;
         }
