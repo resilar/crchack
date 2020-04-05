@@ -765,7 +765,6 @@ static int write_adjusted_message(FILE *in, size_t flips[], size_t n, FILE *out)
 int main(int argc, char *argv[])
 {
     int exit_code, i, ret;
-    u8 *out = NULL;
 
     /* Parse command-line */
     if ((exit_code = handle_options(argc, argv)))
@@ -779,16 +778,9 @@ int main(int argc, char *argv[])
         goto finish;
     }
 
-    /* Allocate output buffer for the modified message */
-    if (!(out = malloc(input.len))) {
-        fputs("error allocating output buffer\n", stderr);
-        exit_code = 4;
-        goto finish;
-    }
-
     /* Forge */
     ret = forge(input.len, &input.target, input_crc,
-                input.bits, input.nbits, out);
+                input.bits, input.nbits, NULL);
 
     if (ret < 0) {
         fprintf(stderr, "FAIL! try giving %d mutable bits more (got %zu)\n",
@@ -824,6 +816,5 @@ finish:
     bigint_destroy(&input.crc.xor_out);
     free(input.slices);
     free(input.bits);
-    free(out);
     return exit_code;
 }
