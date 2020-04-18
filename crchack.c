@@ -514,8 +514,8 @@ static const char *parse_factor(const char *p, ssize_t *value)
                 if ((p = parse_factor(p, &bits)))
                     *value += bits;
             }
-    }
-    break;
+        }
+        break;
 
     case '(':
         if (!dot) {
