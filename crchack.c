@@ -1,5 +1,4 @@
 #define __USE_MINGW_ANSI_STDIO 1 /* make MinGW happy */
-#include "crchack.h"
 #include "bigint.h"
 #include "crc.h"
 #include "forge.h"
@@ -7,6 +6,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <limits.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -360,7 +360,7 @@ static int handle_options(int argc, char *argv[])
     }
     if (input.nbits && input.bits[j] >= input.len*8) {
         size_t left;
-        u8 padding[256];
+        uint8_t padding[256];
         memset(padding, 0, sizeof(padding));
         input.pad = 1 + (input.bits[j] - input.len*8) / 8;
         input.len += input.pad;
