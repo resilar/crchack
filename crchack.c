@@ -101,7 +101,7 @@ static int suckopts(int argc, char * const argv[], const char *suckstring)
 }
 
 /*
- * User input and suckions.
+ * User input and command-line options.
  */
 static struct {
     char *filename;
