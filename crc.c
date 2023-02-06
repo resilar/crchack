@@ -76,10 +76,9 @@ struct bigint *bitmatrix_mov(struct bigint *A, const struct bigint *B)
 }
 
 /* Solve AX = B (upon return, A=I and B=X) */
-static int bitmatrix_solve(struct bigint *A, struct bigint *B)
+static int bitmatrix_solve(struct bigint *A, struct bigint *B, const size_t w)
 {
     size_t i, j;
-    const size_t w = A[0].bits;
     for (i = 0; i < w; i++) {
         for (j = i; j < w; j++) {
             if (bigint_get_bit(&A[j], i)) {
@@ -178,7 +177,7 @@ struct crc_sparse *crc_sparse_new(const struct crc_config *crc, size_t size)
             bigint_xor(&L[j*w + i], &z);
             buf[(s + i) / 8] ^= bits[(s + i) % 8];
         }
-        if (!bitmatrix_solve(bitmatrix_mov(PQ, D), &L[j*w]))
+        if (!bitmatrix_solve(bitmatrix_mov(PQ, D), &L[j*w], w))
             break;
         for (i = 0; i < w; i++) {
             buf[i / 8] ^= bits[i % 8];
@@ -186,7 +185,7 @@ struct crc_sparse *crc_sparse_new(const struct crc_config *crc, size_t size)
             bigint_xor(&R[j*w + i], &z);
             buf[i / 8] ^= bits[i % 8];
         }
-        if (!bitmatrix_solve(bitmatrix_mov(PQ, D), &R[j*w]))
+        if (!bitmatrix_solve(bitmatrix_mov(PQ, D), &R[j*w], w))
             break;
     }
     free(buf);
