@@ -1,14 +1,13 @@
 #include "forge.h"
 #include <stdint.h>
 
-/* TODO: Rewrite */
-int forge(size_t len, const struct bigint *checksum,
-          void (*H)(size_t len, struct bigint *out),
-          size_t bits[], size_t bits_size, void *out)
+int forge(const struct bigint *target_checksum,
+          void (*H)(size_t pos, struct bigint *out),
+          size_t bits[], size_t bits_size)
 {
     int i, j, p, err, ret;
     struct bigint *AT, Hmsg, x, d, acc, mask;
-    size_t width = checksum->bits;
+    size_t width = target_checksum->bits;
 
     /* Initialize bigints (holy fuck the code is so ugly)  */
     if (!(AT = calloc(bits_size, sizeof(struct bigint))))
@@ -24,14 +23,14 @@ int forge(size_t len, const struct bigint *checksum,
     }
 
     /* A[i] = H(msg ^ bits[i]) ^ H(msg) */
-    H(8*len, &Hmsg);
+    H(~(size_t)0, &Hmsg);
     for (i = 0; i < bits_size; i++) {
         H(bits[i], &AT[i]);
         bigint_xor(&AT[i], &Hmsg);
     }
 
-    /* d = checksum ^ H(msg) */
-    bigint_mov(&d, checksum);
+    /* d = target_checksum ^ H(msg) */
+    bigint_mov(&d, target_checksum);
     bigint_xor(&d, &Hmsg);
 
     /**

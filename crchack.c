@@ -779,8 +779,7 @@ int main(int argc, char *argv[])
     }
 
     /* Forge */
-    ret = forge(input.len, &input.target, input_crc,
-                input.bits, input.nbits, NULL);
+    ret = forge(&input.target, input_crc, input.bits, input.nbits);
 
     if (ret < 0) {
         fprintf(stderr, "FAIL! try giving %d mutable bits more (got %zu)\n",
