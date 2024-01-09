@@ -10,11 +10,13 @@ int forge(const struct bigint *target_checksum,
     size_t width = target_checksum->bits;
 
     /* Initialize bigints (holy fuck the code is so ugly)  */
-    if (!(AT = calloc(bits_size, sizeof(struct bigint))))
-        return -(width + 1);
-    err = !bigint_init(&Hmsg, width) | !bigint_init(&x, width)
-        | !bigint_init(&d, width) | !bigint_init(&acc, width)
-        | !bigint_init(&mask, width);
+    err = !(AT = calloc(bits_size, sizeof(struct bigint)));
+    if (err) return -(width + 1);
+    err |= !bigint_init(&Hmsg, width);
+    err |= !bigint_init(&x, width);
+    err |= !bigint_init(&d, width);
+    err |= !bigint_init(&acc, width);
+    err |= !bigint_init(&mask, width);
     for (i = 0; !err && i < bits_size; err |= !bigint_init(&AT[i++], width));
     if (err) {
         ret = -(width + 1);
