@@ -34,6 +34,7 @@ struct slice {
     bitoffset_t l;
     bitoffset_t r;
     bitoffset_t s;
+    int relative;
 };
 
 /*
@@ -42,8 +43,9 @@ struct slice {
 static bitsize_t bits_of_slice(struct slice *slice,
                                bitsize_t end, bitsize_t *bits)
 {
-    bitsize_t n = 0;
+    bitsize_t n;
     bitoffset_t l = slice->l, r = slice->r, s = slice->s;
+    int relative = slice->relative;
     if (s == 0) {
         fprintf(stderr, "slice step cannot be zero\n");
         return 0;
@@ -51,13 +53,13 @@ static bitsize_t bits_of_slice(struct slice *slice,
 
     if (l < 0 && (l += end) < 0) l = 0;
     else if (l > (bitoffset_t)end) l = end;
+    if (relative) r += l;
     if (r < 0 && (r += end) < 0) r = 0;
     else if (r > (bitoffset_t)end) r = end;
 
-    while ((s > 0 && l < r) || (s < 0 && l > r)) {
+    for (n = 0; (s > 0 && l < r) || (s < 0 && l > r); n++) {
         if (bits) *bits++ = l;
         l += s;
-        n++;
     }
 
     return n;
@@ -657,8 +659,6 @@ static int parse_offset(const char *p, bitoffset_t *offset)
 
 static int parse_slice(const char *p, struct slice *slice)
 {
-    int relative;
-
     slice->s = 1;
     slice->l = 0;
 
@@ -669,12 +669,10 @@ static int parse_slice(const char *p, struct slice *slice)
     accept(&p, ':');
 
     /* l:R:s */
-    relative = accept(&p, '+');
+    slice->relative = accept(&p, '+');
     if (!peek(&p)) return 1;
     if (*p != ':' && !(p = parse_slice_offset(p, &slice->r)))
         return 0;
-    if (relative)
-        slice->r += slice->l;
     accept(&p, ':');
 
     /* l:r:S */
