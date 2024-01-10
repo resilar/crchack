@@ -23,7 +23,7 @@ check () {
     EXPECT="$2"
     #NAME="$3"
     printf "CHECK crchack %s ..." "$OPTS"
-    expect "$EXPECT" "$(printf 123456789 | eval "$CRCHACK" "$OPTS" -)"
+    expect "$EXPECT" "$(printf 123456789 | eval "$CRCHACK" "$OPTS" - | tr -d '\r\n')"
     expect "123456789" "$(printf 023456789 | eval "$CRCHACK" "$OPTS" -b0:1 - "$EXPECT")"
     expect "123456789" "$(printf 103456789 | eval "$CRCHACK" "$OPTS" -b1.1:2 - "$EXPECT")"
     expect "123456789" "$(printf 120456789 | eval "$CRCHACK" "$OPTS" -b2:3 - "$EXPECT")"
