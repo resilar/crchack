@@ -100,7 +100,7 @@ static inline int bigint_is_zero(const struct bigint *dest)
     return i == j;
 }
 
-/**
+/*
  * Load bigint from a hex string.
  *
  * Fails if the input string is an invalid hexadecimal number, or if destination
