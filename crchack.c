@@ -361,8 +361,18 @@ static int handle_options(int argc, char *argv[])
                 negative = !negative;
                 offset = -offset;
             }
-            if (negative)
+            if (negative) {
+                if (input.bitlen < (bitsize_t)offset) {
+                    fprintf(stderr, "offset '-%c ", has_offset);
+                    if (has_offset == 'o') fprintf(stderr, "-");
+                    fprintf(stderr, "%jd", offset / 8);
+                    if (offset % 8) fprintf(stderr, ".%jd", offset % 8);
+                    fprintf(stderr, "' starts %zu bits before the message\n",
+                            offset - input.bitlen);
+                    return 3;
+                }
                 offset = input.bitlen - offset;
+            }
             for (i = 0; i < input.crc.width; i++)
                 input.bits[input.nbits++] = offset + i;
         }
@@ -378,31 +388,34 @@ static int handle_options(int argc, char *argv[])
         fprintf(stderr, " }\n");
     }
 
-    /* Check bits array and pad the message buffer if needed */
-    for (i = j = 0; i < input.nbits; i++) {
-        if (input.bits[i] > input.bitlen + input.crc.width - 1) {
-            fprintf(stderr, "bits[%zu]=%ju exceeds message length (%ju bits)\n",
-                    i, input.bits[i], input.bitlen + input.crc.width-1);
-            return 3;
+    /* Validate bit indices and pad the message buffer if needed */
+    if (input.nbits) {
+        for (i = j = 0; i < input.nbits; i++) {
+            if (input.bits[i] >= input.bitlen + input.crc.width) {
+                fprintf(stderr, "bits[%zu]=%ju exceeds message length (%ju bits)\n",
+                        i, input.bits[i], input.bitlen + input.crc.width);
+                return 3;
+            }
+
+            if (input.bits[i] > input.bits[j])
+                j = i;
         }
 
-        if (input.bits[i] > input.bits[j])
-            j = i;
-    }
-    if (input.nbits && input.bits[j] >= input.bitlen) {
-        size_t left;
-        uint8_t padding[256];
-        memset(padding, 0, sizeof(padding));
-        input.pad = 1 + (input.bits[j] - input.bitlen) / 8;
-        input.bitlen = 8 * (bitsize_t)(input.len += input.pad);
-        left = input.pad;
-        while (left > 0) {
-            size_t n = (left < sizeof(padding)) ? left : sizeof(padding);
-            crc_append(&input.crc, padding, n, &input.checksum);
-            left -= n;
+        if (input.bits[j] >= input.bitlen) {
+            size_t left;
+            uint8_t padding[256];
+            memset(padding, 0, sizeof(padding));
+            input.pad = 1 + (input.bits[j] - input.bitlen) / 8;
+            input.bitlen = 8 * (bitsize_t)(input.len += input.pad);
+            left = input.pad;
+            while (left > 0) {
+                size_t n = (left < sizeof(padding)) ? left : sizeof(padding);
+                crc_append(&input.crc, padding, n, &input.checksum);
+                left -= n;
+            }
+            if (input.verbose >= 1)
+                fprintf(stderr, "input message padded by %zu bytes\n", input.pad);
         }
-        if (input.verbose >= 1)
-            fprintf(stderr, "input message padded by %zu bytes\n", input.pad);
     }
 
     /* Create sparse CRC calculation engine */
