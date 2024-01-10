@@ -5,7 +5,7 @@
 
 /* CRC algorithm parameters */
 struct crc_config {
-    int width;              /* CRC register width in bits */
+    unsigned int width;     /* CRC register width in bits */
     struct bigint poly;     /* generator polynomial */
     struct bigint init;     /* initial register value */
     struct bigint xor_out;  /* final register XOR mask */
@@ -13,18 +13,18 @@ struct crc_config {
     int reflect_out;        /* reverse final register */
 };
 
-/* Calculate CRC checksum of a (j-i)-bit message[i..j-1] */
+/* Calculate CRC checksum of a (j-i)-bit message msg[i..j-1] */
 void crc_bits(const struct crc_config *crc,
-              const void *msg, size_t i, size_t j,
+              const void *msg, bitsize_t i, bitsize_t j,
               struct bigint *checksum);
 
 /* Calculate CRC checksum of a len-byte message */
 void crc(const struct crc_config *crc, const void *msg, size_t len,
          struct bigint *checksum);
 
-/* Append a (j-i)-bit message[i..j-1] to an existing checksum  */
+/* Append a (j-i)-bit message msg[i..j-1] to an existing checksum  */
 void crc_append_bits(const struct crc_config *crc,
-                     const void *msg, size_t i, size_t j,
+                     const void *msg, bitsize_t i, bitsize_t j,
                      struct bigint *checksum);
 
 /* Append a len-byte message to an existing checksum  */
@@ -34,7 +34,7 @@ void crc_append(const struct crc_config *crc, const void *msg, size_t len,
 /* CRC sparse engine for efficient checksum calculation of sparse inputs */
 struct crc_sparse {
     struct crc_config crc;  /* CRC algorithm */
-    size_t size;            /* message size in bits */
+    bitsize_t size;         /* message size in bits */
 
     struct bigint *D;       /* difference matrix */
     struct bigint *L;       /* left matrix table */
@@ -43,10 +43,10 @@ struct crc_sparse {
 };
 
 /* New CRC sparse engine for size-bit long message */
-struct crc_sparse *crc_sparse_new(const struct crc_config *crc, size_t size);
+struct crc_sparse *crc_sparse_new(const struct crc_config *crc, bitsize_t size);
 
 /* Adjust CRC checksum for a message with bit flip in the given position */
-int crc_sparse_1bit(struct crc_sparse *engine, size_t bitpos,
+int crc_sparse_1bit(struct crc_sparse *engine, bitsize_t bitpos,
                     struct bigint *checksum);
 
 /* Delete CRC sparse engine */

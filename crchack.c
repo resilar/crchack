@@ -5,12 +5,10 @@
 
 #include <ctype.h>
 #include <errno.h>
-#include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
 static void help(char *argv0)
 {
@@ -33,14 +31,40 @@ static void help(char *argv0)
  * Structure and functions for slices of bit indices.
  */
 struct slice {
-    ssize_t l;
-    ssize_t r;
-    ssize_t s;
+    bitoffset_t l;
+    bitoffset_t r;
+    bitoffset_t s;
 };
 
-static int parse_offset(const char *p, ssize_t *offset);
+/*
+ * Extract bits defined by a slice and return the total number of bits.
+ */
+static bitsize_t bits_of_slice(struct slice *slice,
+                               bitsize_t end, bitsize_t *bits)
+{
+    bitsize_t n = 0;
+    bitoffset_t l = slice->l, r = slice->r, s = slice->s;
+    if (s == 0) {
+        fprintf(stderr, "slice step cannot be zero\n");
+        return 0;
+    }
+
+    if (l < 0 && (l += end) < 0) l = 0;
+    else if (l > (bitoffset_t)end) l = end;
+    if (r < 0 && (r += end) < 0) r = 0;
+    else if (r > (bitoffset_t)end) r = end;
+
+    while ((s > 0 && l < r) || (s < 0 && l > r)) {
+        if (bits) *bits++ = l;
+        l += s;
+        n++;
+    }
+
+    return n;
+}
+
+static int parse_offset(const char *p, bitoffset_t *offset);
 static int parse_slice(const char *p, struct slice *slice);
-static size_t bits_of_slice(struct slice *slice, size_t end, size_t *bits);
 
 /*
  * suckopts(): POSIXish minimal getopt(3) implementation.
@@ -109,6 +133,7 @@ static struct {
     FILE *out;
 
     size_t len;
+    bitsize_t bitlen;
     size_t pad;
     struct bigint checksum;
 
@@ -117,7 +142,7 @@ static struct {
     struct bigint target;
     int has_target;
 
-    size_t *bits;
+    bitsize_t *bits;
     size_t nbits;
 
     struct slice *slices;
@@ -135,9 +160,10 @@ static FILE *handle_message_file(const char *filename, size_t *size);
  */
 static int handle_options(int argc, char *argv[])
 {
-    ssize_t offset;
+    bitsize_t nbits;
+    bitoffset_t offset;
     int c, has_offset;
-    size_t i, j, nbits, width;
+    size_t i, j, width;
     char *poly, *init, reflect_in, reflect_out, *xor_out, *target;
 
     offset = 0;
@@ -290,10 +316,13 @@ static int handle_options(int argc, char *argv[])
     if (!(input.in = handle_message_file(input.filename, &input.len)))
         return 2;
     input.out = stdout;
+    input.bitlen = 8 * (bitsize_t)input.len;
 
     /* Verbose message info */
     if (input.verbose >= 1) {
-        fprintf(stderr, "len(msg) = %zu bytes\n", input.len);
+        fprintf(stderr, "len(msg)");
+        fprintf(stderr, " = %zu bytes", input.len);
+        fprintf(stderr, " = %ju bits\n", input.bitlen);
         fprintf(stderr, "CRC(msg) = ");
         bigint_fprint(stderr, &input.checksum);
         fprintf(stderr, "\n");
@@ -309,19 +338,19 @@ static int handle_options(int argc, char *argv[])
     /* Determine (upper bound for) size of the input.bits array */
     nbits = (has_offset || !input.nslices) ? input.crc.width : 0;
     for (i = 0; i < input.nslices; i++)
-        nbits += bits_of_slice(&input.slices[i], input.len * 8, NULL);
+        nbits += bits_of_slice(&input.slices[i], input.bitlen, NULL);
 
     /* Fill input.bits */
     if (nbits) {
         /* Read bit indices from '-b' slices */
-        if (!(input.bits = calloc(nbits, sizeof(size_t)))) {
+        if (!(input.bits = calloc(nbits, sizeof(bitsize_t)))) {
             fprintf(stderr, "error allocating bits array\n");
             return 4;
         }
 
         for (i = 0; i < input.nslices; i++) {
-            size_t n = bits_of_slice(&input.slices[i], input.len * 8,
-                    &input.bits[input.nbits]);
+            size_t n = bits_of_slice(&input.slices[i], input.bitlen,
+                                     &input.bits[input.nbits]);
             input.nbits += n;
         }
 
@@ -333,7 +362,7 @@ static int handle_options(int argc, char *argv[])
                 offset = -offset;
             }
             if (negative)
-                offset = input.len*8 - offset;
+                offset = input.bitlen - offset;
             for (i = 0; i < input.crc.width; i++)
                 input.bits[input.nbits++] = offset + i;
         }
@@ -342,32 +371,34 @@ static int handle_options(int argc, char *argv[])
     /* Verbose bits info */
     if (input.verbose >= 1) {
         fprintf(stderr, "bits[%zu] = {", input.nbits);
-        for (i = 0; i < input.nbits; i++)
-            fprintf(stderr, &", %zu.%zu"[!i], input.bits[i]/8, input.bits[i]%8);
+        for (i = 0; i < input.nbits; i++) {
+            const char *fmt = &", %ju.%ju"[!i];
+            fprintf(stderr, fmt, input.bits[i]/8, input.bits[i]%8);
+        }
         fprintf(stderr, " }\n");
     }
 
     /* Check bits array and pad the message buffer if needed */
     for (i = j = 0; i < input.nbits; i++) {
-        if (input.bits[i] > input.len*8 + input.crc.width - 1) {
-            fprintf(stderr, "bits[%zu]=%zu exceeds message length (%zu bits)\n",
-                    i, input.bits[i], input.len*8 + input.crc.width-1);
+        if (input.bits[i] > input.bitlen + input.crc.width - 1) {
+            fprintf(stderr, "bits[%zu]=%ju exceeds message length (%ju bits)\n",
+                    i, input.bits[i], input.bitlen + input.crc.width-1);
             return 3;
         }
 
         if (input.bits[i] > input.bits[j])
             j = i;
     }
-    if (input.nbits && input.bits[j] >= input.len*8) {
+    if (input.nbits && input.bits[j] >= input.bitlen) {
         size_t left;
         uint8_t padding[256];
         memset(padding, 0, sizeof(padding));
-        input.pad = 1 + (input.bits[j] - input.len*8) / 8;
-        input.len += input.pad;
+        input.pad = 1 + (input.bits[j] - input.bitlen) / 8;
+        input.bitlen = 8 * (bitsize_t)(input.len += input.pad);
         left = input.pad;
         while (left > 0) {
             size_t n = (left < sizeof(padding)) ? left : sizeof(padding);
-            crc_append_bits(&input.crc, padding, 0, 8*n, &input.checksum);
+            crc_append(&input.crc, padding, n, &input.checksum);
             left -= n;
         }
         if (input.verbose >= 1)
@@ -375,7 +406,7 @@ static int handle_options(int argc, char *argv[])
     }
 
     /* Create sparse CRC calculation engine */
-    if (!(input.sparse = crc_sparse_new(&input.crc, 8*input.len))) {
+    if (!(input.sparse = crc_sparse_new(&input.crc, input.bitlen))) {
         fputs("error initializing sparse CRC engine (bad params?)\n", stderr);
         return 5;
     }
@@ -439,7 +470,7 @@ static FILE *handle_message_file(const char *filename, size_t *size)
                 i += m;
             }
         }
-        crc_append_bits(&input.crc, buf, 0, 8*n, &input.checksum);
+        crc_append(&input.crc, buf, n, &input.checksum);
         *size += n;
     }
 
@@ -487,8 +518,8 @@ static int accept_any(const char **pp, const char *set)
     return *set ? accept(pp, ch) : 0;
 }
 
-static const char *parse_expression(const char *p, ssize_t *value);
-static const char *parse_factor(const char *p, ssize_t *value)
+static const char *parse_expression(const char *p, bitoffset_t *value);
+static const char *parse_factor(const char *p, bitoffset_t *value)
 {
     int dot = accept(&p, '.');
 
@@ -497,10 +528,10 @@ static const char *parse_factor(const char *p, ssize_t *value)
     case '5': case'6': case '7': case '8': case '9':
         errno = 0;
         if (p[0] == '0' && p[1] == 'x') {
-            *value = (ssize_t)strtoull(p + 2, (char **)&p, 16);
+            *value = (bitoffset_t)strtoull(p + 2, (char **)&p, 16);
             if (errno) perror("invalid unsigned hex integer");
         } else {
-            *value = (ssize_t)strtoll(p, (char **)&p, 10);
+            *value = (bitoffset_t)strtoll(p, (char **)&p, 10);
             if (errno) perror("invalid signed integer");
         }
         if (errno) {
@@ -510,7 +541,7 @@ static const char *parse_factor(const char *p, ssize_t *value)
         } else if (!dot) {
             *value *= 8;
             if (peek(&p) == '.') {
-                ssize_t bits;
+                bitoffset_t bits;
                 if ((p = parse_factor(p, &bits)))
                     *value += bits;
             }
@@ -548,7 +579,7 @@ static const char *parse_factor(const char *p, ssize_t *value)
     return p;
 }
 
-static const char *parse_unary(const char *p, ssize_t *value)
+static const char *parse_unary(const char *p, bitoffset_t *value)
 {
     if (accept(&p, '+')) {
         p = parse_unary(p, value);
@@ -561,35 +592,35 @@ static const char *parse_unary(const char *p, ssize_t *value)
     return p;
 }
 
-static const char *parse_muldiv(const char *p, ssize_t *value)
+static const char *parse_muldiv(const char *p, bitoffset_t *value)
 {
     if ((p = parse_unary(p, value))) {
         int op;
-        ssize_t rhs;
+        bitoffset_t rhs;
         while ((op = accept_any(&p, "*/")) && (p = parse_unary(p, &rhs)))
             *value = (op == '*') ? (*value * rhs / 8) : 8 * *value / rhs;
     }
     return p;
 }
 
-static const char *parse_addsub(const char *p, ssize_t *value)
+static const char *parse_addsub(const char *p, bitoffset_t *value)
 {
     if ((p = parse_muldiv(p, value))) {
         int op;
-        ssize_t rhs;
+        bitoffset_t rhs;
         while ((op = accept_any(&p, "+-")) && (p = parse_muldiv(p, &rhs)))
             *value = (op == '+') ? *value + rhs : *value - rhs;
     }
     return p;
 }
 
-static const char *parse_expression(const char *p, ssize_t *value)
+static const char *parse_expression(const char *p, bitoffset_t *value)
 {
     *value = 0;
     return parse_addsub(p, value);
 }
 
-static const char *parse_slice_offset(const char *p, ssize_t *offset)
+static const char *parse_slice_offset(const char *p, bitoffset_t *offset)
 {
     if ((p = parse_expression(p, offset))) {
         if (peek(&p) != '\0' && peek(&p) != ':') {
@@ -600,7 +631,7 @@ static const char *parse_slice_offset(const char *p, ssize_t *offset)
     return p;
 }
 
-static int parse_offset(const char *p, ssize_t *offset)
+static int parse_offset(const char *p, bitoffset_t *offset)
 {
     if ((p = parse_slice_offset(p, offset))) {
         if (peek(&p)) {
@@ -621,7 +652,7 @@ static int parse_slice(const char *p, struct slice *slice)
     /* L:r:s */
     if (!peek(&p) || (*p != ':' && !(p = parse_slice_offset(p, &slice->l))))
         return 0;
-    slice->r = !peek(&p) ? slice->l+1 : ((size_t)SIZE_MAX >> 1);
+    slice->r = !peek(&p) ? slice->l+1 : (bitoffset_t)(~(bitsize_t)0 >> 1);
     accept(&p, ':');
 
     /* l:R:s */
@@ -646,48 +677,18 @@ static int parse_slice(const char *p, struct slice *slice)
     return 1;
 }
 
-/*
- * Extract bits of a slice.
- *
- * Returns the number of bits in the given slice.
- */
-static size_t bits_of_slice(struct slice *slice, size_t end, size_t *bits)
+static void input_crc(bitsize_t pos, struct bigint *checksum)
 {
-    size_t n = 0;
-    ssize_t l = slice->l, r = slice->r, s = slice->s;
-    if (s == 0) {
-        fprintf(stderr, "slice step cannot be zero\n");
-        return 0;
-    }
-
-    if (l < 0 && (l += end) < 0) l = 0;
-    else if (l > (ssize_t)end) l = end;
-    if (r < 0 && (r += end) < 0) r = 0;
-    else if (r > (ssize_t)end) r = end;
-
-    while ((s > 0 && l < r) || (s < 0 && l > r)) {
-        if (bits) *bits++ = l;
-        l += s;
-        n++;
-    }
-
-    return n;
-}
-
-static void input_crc(size_t len, struct bigint *checksum)
-{
-    if (len >= 8*input.len) {
-        bigint_mov(checksum, &input.checksum);
-    } else {
-        const size_t pos = input.crc.reflect_in
-                         ? len : (len & ~7) | (7 - (len & 7));
-        bigint_mov(checksum, &input.checksum);
+    bigint_mov(checksum, &input.checksum);
+    if (pos < input.bitlen) {
+        if (!input.crc.reflect_in)
+            pos = (pos & ~7) | (7 - (pos & 7));
         crc_sparse_1bit(input.sparse, pos, checksum);
     }
 }
 
 /* Input array A[0..n] and work array B[0..n] */
-static void merge_sort_recurse(size_t *A, size_t n, size_t *B)
+static void merge_sort_recurse(bitsize_t *A, size_t n, bitsize_t *B)
 {
     const size_t m = n / 2;
     if (m > 0) {
@@ -704,18 +705,18 @@ static void merge_sort_recurse(size_t *A, size_t n, size_t *B)
     }
 }
 
-static int merge_sort(size_t *A, size_t n)
+static int merge_sort(bitsize_t *A, size_t n)
 {
-    size_t *B;
-    if ((B = calloc(n, sizeof(size_t)))) {
-        memcpy(B, A, n * sizeof(size_t));
+    bitsize_t *B;
+    if ((B = calloc(n, sizeof(bitsize_t)))) {
+        memcpy(B, A, n * sizeof(bitsize_t));
         merge_sort_recurse(A, n, B);
         free(B);
     }
     return !!B;
 }
 
-static int write_adjusted_message(FILE *in, size_t flips[], size_t n, FILE *out)
+static int write_adjusted(FILE *in, bitsize_t flips[], size_t n, FILE *out)
 {
     size_t m, size;
     if (!merge_sort(flips, n)) {
@@ -764,7 +765,8 @@ static int write_adjusted_message(FILE *in, size_t flips[], size_t n, FILE *out)
 
 int main(int argc, char *argv[])
 {
-    int exit_code, i, ret;
+    int exit_code;
+    bitoffset_t ret;
 
     /* Parse command-line */
     if ((exit_code = handle_options(argc, argv)))
@@ -782,7 +784,7 @@ int main(int argc, char *argv[])
     ret = forge(&input.target, input_crc, input.bits, input.nbits);
 
     if (ret < 0) {
-        fprintf(stderr, "FAIL! try giving %d mutable bits more (got %zu)\n",
+        fprintf(stderr, "FAIL! try giving %jd mutable bits more (got %zu)\n",
                 -ret, input.nbits);
         exit_code = 6;
         goto finish;
@@ -790,13 +792,16 @@ int main(int argc, char *argv[])
 
     /* Show flipped bits */
     if (input.verbose >= 1) {
-        fprintf(stderr, "flip[%d] = {", ret);
-        for (i = 0; i < ret; i++)
-            fprintf(stderr, &", %zu.%zu"[!i], input.bits[i]/8, input.bits[i]%8);
+        bitoffset_t i;
+        fprintf(stderr, "flip[%jd] = {", ret);
+        for (i = 0; i < ret; i++) {
+            const char *fmt = &", %ju.%ju"[!i];
+            fprintf(stderr, fmt, input.bits[i]/8, input.bits[i]%8);
+        }
         fprintf(stderr, " }\n");
     }
 
-    if (!write_adjusted_message(input.in, input.bits, ret, input.out)) {
+    if (!write_adjusted(input.in, input.bits, ret, input.out)) {
         exit_code = 7;
         goto finish;
     }

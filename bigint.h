@@ -4,20 +4,24 @@
 #ifndef BIGINT_H
 #define BIGINT_H
 
-#include <memory.h>
+#include "bittypes.h"
+
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 typedef unsigned long limb_t;
+
 struct bigint {
     limb_t *limb;
-    size_t bits;
+    bitsize_t bits;
 };
-#define LIMB_BITS (sizeof(limb_t)*8)
-#define BITS_TO_LIMBS(bits) ((bits) ? (1 + ((bits) - 1) / LIMB_BITS) : 0)
+
+#define LIMB_BITS (8 * (bitsize_t)sizeof(limb_t))
+#define BITS_TO_LIMBS(x) ((size_t)((x) ? (1 + ((x) - 1) / LIMB_BITS) : 0))
 
 /* Size of bigint in bits */
-static inline size_t bigint_bits(const struct bigint *dest)
+static inline bitsize_t bigint_bits(const struct bigint *dest)
 {
     return dest->bits;
 }
@@ -29,7 +33,7 @@ static inline size_t bigint_limbs(const struct bigint *dest)
 }
 
 /* Initialize bigint structure */
-static inline struct bigint *bigint_init(struct bigint *dest, size_t bits)
+static inline struct bigint *bigint_init(struct bigint *dest, bitsize_t bits)
 {
     if (bits && (dest->limb = calloc(BITS_TO_LIMBS(bits), sizeof(limb_t)))) {
         dest->bits = bits;
@@ -49,7 +53,7 @@ static inline void bigint_destroy(struct bigint *dest)
 }
 
 /* Allocate and initialize array of n bigint structures */
-static inline struct bigint *bigint_array_new(size_t n, size_t bits)
+static inline struct bigint *bigint_array_new(size_t n, bitsize_t bits)
 {
     struct bigint *arr;
     size_t limbs = BITS_TO_LIMBS(bits);
@@ -92,11 +96,8 @@ static inline void bigint_load_ones(struct bigint *dest)
 static inline int bigint_is_zero(const struct bigint *dest)
 {
     size_t i, j = bigint_limbs(dest);
-    for (i = 0; i < j; i++) {
-        if (dest->limb[i])
-            return 0;
-    }
-    return 1;
+    for (i = 0; i < j && !dest->limb[i]; i++);
+    return i == j;
 }
 
 /**
@@ -108,28 +109,28 @@ static inline int bigint_is_zero(const struct bigint *dest)
 struct bigint *bigint_from_string(struct bigint *dest, const char *hex);
 
 /* Get/set the nth least significant bit (n = 0, 1, 2, ..., dest->bits - 1) */
-static inline int bigint_get_bit(const struct bigint *dest, size_t n)
+static inline int bigint_get_bit(const struct bigint *dest, bitsize_t n)
 {
     return (dest->limb[n / LIMB_BITS] >> (n % LIMB_BITS)) & 1;
 }
 #define bigint_lsb(x) ((x)->limb[0] & 1)
 #define bigint_msb(x) (bigint_get_bit((x), (x)->bits-1))
 
-static inline void bigint_set_bit(struct bigint *dest, size_t n)
+static inline void bigint_set_bit(struct bigint *dest, bitsize_t n)
 {
     dest->limb[n / LIMB_BITS] |= ((limb_t)1 << (n % LIMB_BITS));
 }
 #define bigint_set_lsb(x) ((x)->limb[0] |= 1)
 #define bigint_set_msb(x) (bigint_set_bit((x), (x)->bits-1))
 
-static inline void bigint_clear_bit(struct bigint *dest, size_t n)
+static inline void bigint_clear_bit(struct bigint *dest, bitsize_t n)
 {
     dest->limb[n / LIMB_BITS] &= ~((limb_t)1 << (n % LIMB_BITS));
 }
 #define bigint_clear_lsb(x) ((x)->limb[0] &= ~(limb_t)1)
 #define bigint_clear_msb(x) (bigint_clear_bit((x), (x)->bits-1))
 
-static inline void bigint_flip_bit(struct bigint *dest, size_t n)
+static inline void bigint_flip_bit(struct bigint *dest, bitsize_t n)
 {
     dest->limb[n / LIMB_BITS] ^= ((limb_t)1 << (n % LIMB_BITS));
 }
@@ -148,8 +149,7 @@ static inline struct bigint *bigint_mov(struct bigint *dest,
 static inline struct bigint *bigint_not(struct bigint *dest)
 {
     size_t i, j = bigint_limbs(dest);
-    for (i = 0; i < j; i++)
-        dest->limb[i] = ~dest->limb[i];
+    for (i = 0; i < j; i++) dest->limb[i] = ~dest->limb[i];
     return dest;
 }
 
@@ -157,9 +157,8 @@ static inline struct bigint *bigint_not(struct bigint *dest)
 static inline struct bigint *bigint_xor(struct bigint *dest,
                                         const struct bigint *src)
 {
-    size_t i, j;
-    for (i = 0, j = bigint_limbs(dest); i < j; i++)
-        dest->limb[i] ^= src->limb[i];
+    size_t i, j = bigint_limbs(dest);
+    for (i = 0; i < j; i++) dest->limb[i] ^= src->limb[i];
     return dest;
 }
 
@@ -168,8 +167,7 @@ static inline struct bigint *bigint_and(struct bigint *dest,
                                         const struct bigint *src)
 {
     size_t i, j = bigint_limbs(dest);
-    for (i = 0; i < j; i++)
-        dest->limb[i] &= src->limb[i];
+    for (i = 0; i < j; i++) dest->limb[i] &= src->limb[i];
     return dest;
 }
 
@@ -212,7 +210,7 @@ static inline struct bigint *bigint_reflect(struct bigint *dest)
 {
     struct bigint acc;
     if (bigint_init(&acc, dest->bits)) {
-        size_t i;
+        bitsize_t i;
         bigint_mov(&acc, dest);
         bigint_load_zeros(dest);
         for (i = 0; i < dest->bits; i++) {

@@ -2,12 +2,12 @@
 
 void bigint_fprint(FILE *stream, const struct bigint *dest)
 {
-    size_t i, j, k = (LIMB_BITS/4) - ((dest->bits + 3) % LIMB_BITS)/4;
+    size_t i, j, k = LIMB_BITS/4 - ((dest->bits + 3) % LIMB_BITS)/4;
     for (i = 1, j = bigint_limbs(dest); i <= j; i++) {
         const limb_t limb = dest->limb[j-i];
-        for (k = k % (LIMB_BITS/4); k < LIMB_BITS/4; k++) {
+        for (k %= LIMB_BITS/4; k < LIMB_BITS/4; k++) {
             unsigned char nibble = (limb >> (LIMB_BITS - 4*(k+1))) & 0x0F;
-            fputc((nibble < 10) ? (nibble + '0') : (nibble - 10 + 'a'), stream);
+            fputc("0123456789abcdef"[nibble], stream);
         }
     }
 }

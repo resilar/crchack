@@ -1,5 +1,4 @@
 #include "crc.h"
-#include <stdint.h>
 
 static const uint8_t bytebits[2][8] = {
     { 0x80, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01 }, /* MSB to LSB */
@@ -7,7 +6,7 @@ static const uint8_t bytebits[2][8] = {
 };
 
 void crc_bits(const struct crc_config *crc,
-              const void *msg, size_t i, size_t j,
+              const void *msg, bitsize_t i, bitsize_t j,
               struct bigint *checksum)
 {
     /* Input bytes */
@@ -39,11 +38,11 @@ void crc(const struct crc_config *crc, const void *msg, size_t len,
          struct bigint *checksum)
 {
     bigint_load_zeros(checksum);
-    crc_bits(crc, msg, 0, 8*len, checksum);
+    crc_bits(crc, msg, 0, 8 * (bitsize_t)len, checksum);
 }
 
 void crc_append_bits(const struct crc_config *crc,
-                     const void *msg, size_t i, size_t j,
+                     const void *msg, bitsize_t i, bitsize_t j,
                      struct bigint *checksum)
 {
     if (crc->reflect_out)
@@ -56,7 +55,7 @@ void crc_append_bits(const struct crc_config *crc,
 void crc_append(const struct crc_config *crc, const void *msg, size_t len,
                 struct bigint *checksum)
 {
-    crc_append_bits(crc, msg, 0, 8*len, checksum);
+    crc_append_bits(crc, msg, 0, 8 * (bitsize_t)len, checksum);
 }
 
 /*
@@ -116,10 +115,10 @@ bitmatrix_mul(const struct bigint *A, const struct bigint *B, struct bigint *X)
 }
 
 /* New CRC calculator engine for sparse inputs and size-bit long message */
-struct crc_sparse *crc_sparse_new(const struct crc_config *crc, size_t size)
+struct crc_sparse *crc_sparse_new(const struct crc_config *crc, bitsize_t size)
 {
     uint8_t *buf;
-    size_t i, j, m, n;
+    bitsize_t i, j, m, n;
     struct crc_sparse *engine;
     struct bigint *D, *L, *R, *PQ, z;
     const size_t w = crc->width;
@@ -206,12 +205,12 @@ struct crc_sparse *crc_sparse_new(const struct crc_config *crc, size_t size)
 }
 
 /* Adjust CRC checksum for a message with bit flip in the given position */
-int crc_sparse_1bit(struct crc_sparse *engine, size_t pos,
+int crc_sparse_1bit(struct crc_sparse *engine, bitsize_t pos,
                     struct bigint *checksum)
 {
     struct bigint *P, *Q, *PQ;
-    size_t ldist, rdist, i;
-    const size_t w = engine->crc.width;
+    bitsize_t ldist, rdist, i;
+    const bitsize_t w = engine->crc.width;
     const uint8_t *bits = bytebits[engine->crc.reflect_in];
     if (pos >= engine->size || checksum->bits != w)
         return 0;

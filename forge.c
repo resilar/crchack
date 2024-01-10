@@ -1,32 +1,31 @@
 #include "forge.h"
-#include <stdint.h>
 
-int forge(const struct bigint *target_checksum,
-          void (*H)(size_t pos, struct bigint *out),
-          size_t bits[], size_t bits_size)
+bitoffset_t forge(const struct bigint *target_checksum,
+                  void (*H)(bitsize_t pos, struct bigint *out),
+                  bitsize_t bits[], size_t nbits)
 {
-    int i, j, p, err, ret;
-    struct bigint *AT, Hmsg, x, d, acc, mask;
-    size_t width = target_checksum->bits;
+    struct bigint Hmsg, x, d, acc, mask, *AT;
+    bitoffset_t ret;
+    bitsize_t i, j, p, width = target_checksum->bits;;
+    int err = 0;
 
     /* Initialize bigints (holy fuck the code is so ugly)  */
-    err = !(AT = calloc(bits_size, sizeof(struct bigint)));
-    if (err) return -(width + 1);
     err |= !bigint_init(&Hmsg, width);
     err |= !bigint_init(&x, width);
     err |= !bigint_init(&d, width);
     err |= !bigint_init(&acc, width);
     err |= !bigint_init(&mask, width);
-    for (i = 0; !err && i < bits_size; err |= !bigint_init(&AT[i++], width));
+    err |= !(AT = calloc(nbits, sizeof(struct bigint)));
+    for (i = 0; !err && i < nbits; err |= !bigint_init(&AT[i++], width));
     if (err) {
-        ret = -(width + 1);
-        bits_size = i;
-        goto cleanup;
+        ret = -(bitoffset_t)(width + 1);
+        nbits = i;
+        goto finish;
     }
 
     /* A[i] = H(msg ^ bits[i]) ^ H(msg) */
-    H(~(size_t)0, &Hmsg);
-    for (i = 0; i < bits_size; i++) {
+    H(~(bitsize_t)0, &Hmsg);
+    for (i = 0; i < nbits; i++) {
         H(bits[i], &AT[i]);
         bigint_xor(&AT[i], &Hmsg);
     }
@@ -43,10 +42,10 @@ int forge(const struct bigint *target_checksum,
     bigint_load_zeros(&mask);
     for (i = 0; i < width; i++) {
         /* Find next pivot (row with a non-zero column i) */
-        for (j = p; j < bits_size; j++) {
+        for (j = p; j < nbits; j++) {
             if (bigint_get_bit(&AT[j], i)) {
                 /* Swap rows j and p */
-                size_t tmp = bits[j];
+                bitsize_t tmp = bits[j];
                 bits[j] = bits[p];
                 bits[p] = tmp;
                 bigint_swap(&AT[j], &AT[p]);
@@ -54,10 +53,10 @@ int forge(const struct bigint *target_checksum,
             }
         }
 
-        if (j < bits_size) {
+        if (j < nbits) {
             /* Pivot found */
             /* Zero out column i in rows below pivot */
-            for (j = p+1; j < bits_size; j++) {
+            for (j = p+1; j < nbits; j++) {
                 if (bigint_get_bit(&AT[j], i)) {
                     bigint_xor(&AT[j], &AT[p]);
 
@@ -96,25 +95,23 @@ int forge(const struct bigint *target_checksum,
         ret = 0;
         for (i = 0; i < width; i++) {
             if (bigint_get_bit(&x, i)) {
-                if (ret != i) {
-                    size_t tmp = bits[i];
-                    bits[i] = bits[ret];
-                    bits[ret] = tmp;
-                }
+                bitsize_t tmp = bits[i];
+                bits[i] = bits[ret];
+                bits[ret] = tmp;
                 ret++;
             }
         }
     } else {
-        ret = -(width-i);
+        ret = -(bitoffset_t)(width-i);
     }
 
-cleanup:
+finish:
     bigint_destroy(&mask);
     bigint_destroy(&acc);
     bigint_destroy(&d);
     bigint_destroy(&x);
     bigint_destroy(&Hmsg);
-    for (i = 0; i < bits_size; i++)
+    for (i = 0; i < nbits; i++)
         bigint_destroy(&AT[i]);
     free(AT);
     return ret;
