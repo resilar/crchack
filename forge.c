@@ -18,11 +18,12 @@ bitoffset_t forge(const struct bigint *target_checksum,
         bigint_destroy(&acc);
         return -(bitoffset_t)(width + 2);
     }
-    for (i = 0; i < nbits && bigint_init(&AT[i], width); i++);
-    if (i < nbits) {
-        ret = -(bitoffset_t)(width + 2);
-        nbits = i;
-        goto finish;
+    for (i = 0; i < nbits; i++) {
+        if (!bigint_init(&AT[i], width)) {
+            ret = -(bitoffset_t)(width + 2);
+            nbits = i;
+            goto finish;
+        }
     }
 
     /* A[i] = H(msg ^ bits[i]) ^ H(msg) */
