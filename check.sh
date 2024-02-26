@@ -22,7 +22,7 @@ check () {
     OPTS="$1"
     EXPECT="$2"
     #NAME="$3"
-    printf "CHECK crchack %s ..." "$OPTS"
+    printf "CHECK %s %s ..." "$CRCHACK" "$OPTS"
     expect "$EXPECT" "$(printf 123456789 | eval "$CRCHACK" "$OPTS" - | tr -d '\r\n')"
     expect "123456789" "$(printf 023456789 | eval "$CRCHACK" "$OPTS" -b0:1 - "$EXPECT")"
     expect "123456789" "$(printf 103456789 | eval "$CRCHACK" "$OPTS" -b1.1:2 - "$EXPECT")"
@@ -147,3 +147,8 @@ check "-w64 -p000000000000001b -iffffffffffffffff -rR -xffffffffffffffff" "b9095
 check "-w64 -p42f0e1eba9ea3693 -iffffffffffffffff -xffffffffffffffff" "62ec59e3f1a4f00a" "CRC-64/WE"
 check "-w64 -p42f0e1eba9ea3693 -iffffffffffffffff -rR -xffffffffffffffff" "995dc9bbdf1939fa" "CRC-64/XZ"
 check "-w82 -p0308c0111011401440411 -rR" "09ea83f625023801fd612" "CRC-82/DARC"
+
+printf 'SOLVE %s Google CTF 2018 (Quals) task "Tape, misc, 355p" ...' "$CRCHACK"
+expect ': You probably just want the flag.  So here it is: CTF{dZXicOXLaMumrTPIUTYMI}. :' "$(printf ': You probably just want the flag.  So here it is: CTF{dZXi__________PIUTYMI}. :' | eval "$CRCHACK" -b 59.0:69:1 -b 59.1:69:1 -b 59.2:69:1 -b 59.3:69:1 -b 59.4:69:1 -b 59.5:69:1 -w64 -p0x42F0E1EBA9EA3693 -rR - 0x30d498cbfb871112)"
+expect "30d498cbfb871112" "$(printf ': You probably just want the flag.  So here it is: CTF{dZXi__________PIUTYMI}. :' | eval "$CRCHACK" -b 59.0:69:1 -b 59.1:69:1 -b 59.2:69:1 -b 59.3:69:1 -b 59.4:69:1 -b 59.5:69:1 -w64 -p0x42F0E1EBA9EA3693 -rR - 0x30d498cbfb871112 | eval "$CRCHACK" -w64 -p0x42F0E1EBA9EA3693 -rR -)"
+printf "\n"
