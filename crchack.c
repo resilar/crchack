@@ -209,7 +209,7 @@ static int handle_options(int argc, char *argv[])
             if (!(input.nslices & (input.nslices + 1))) {
                 struct slice *new;
                 if (input.slices == NULL) {
-                    new = malloc(64 * sizeof(struct slice));
+                    new = malloc(sizeof(struct slice));
                 } else {
                     size_t capacity = 2*(input.nslices + 1);
                     new = realloc(input.slices, capacity*sizeof(struct slice));
