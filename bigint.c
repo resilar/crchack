@@ -14,9 +14,12 @@ void bigint_fprint(FILE *stream, const struct bigint *dest)
 
 struct bigint *bigint_from_string(struct bigint *dest, const char *hex)
 {
+    int neg;
     size_t len, bits, i;
 
     /* Validate input string */
+    if ((neg = (hex[0] == '-')))
+        hex++;
     if (hex[0] == '0' && hex[1] == 'x')
         hex += 2;
     len = strspn(hex, "0123456789abcdefABCDEF");
@@ -44,5 +47,16 @@ struct bigint *bigint_from_string(struct bigint *dest, const char *hex)
         }
         dest->limb[i/LIMB_BITS] |= (limb_t)v << (i % LIMB_BITS);
     }
+
+    /* Handle negative values */
+    if (neg) {
+        limb_t carry = 1;
+        size_t j = bigint_limbs(dest);
+        for (i = 0; i < j; i++) {
+            dest->limb[i] = ~dest->limb[i] + carry;
+            carry &= dest->limb[i] == 0;
+        }
+    }
+
     return dest;
 }
