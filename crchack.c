@@ -369,8 +369,8 @@ static int handle_options(int argc, char *argv[])
                     if (has_offset == 'o') fprintf(stderr, "-");
                     fprintf(stderr, "%jd", offset / 8);
                     if (offset % 8) fprintf(stderr, ".%jd", offset % 8);
-                    fprintf(stderr, "' starts %zu bits before the message\n",
-                            offset - input.bitlen);
+                    fprintf(stderr, "' starts %ju bits before the message\n",
+                            (bitsize_t)offset - input.bitlen);
                     return 3;
                 }
                 offset = input.bitlen - offset;
