@@ -82,11 +82,12 @@ _MLPPQPQ
 
 The byte position is optionally followed by a dot-separated *bit* position. For
 instance, `-b0.32`, `-b2.16` and `-b4.0` all select the same 32nd bit. Within a
-byte, bits are numbered from least significant bit (0) to most significant bit
-(7). Negative positions are treated as offsets from the end of the input.
-Built-in expression parser supports `0x`-prefixed hexadecimal numbers as well
-as basic arithmetic operations `+-*/`. Finally, `end` can be defined relative
-to `start` by starting the position expression with unary `+` operator.
+byte, bits are numbered from the least significant bit (0) to the most
+significant bit (7). Negative positions are treated as offsets from the end of
+the input. Built-in expression parser supports `0x`-prefixed hexadecimal
+numbers as well as basic arithmetic operations `+-*/`. Finally, `end` can be
+defined relative to `start` by starting the position expression with unary `+`
+operator.
 
 ```
 [crchack]$ python -c 'print("A"*32)' | ./crchack -b "0.5:+.8*32:.8" - 1337c0de
@@ -98,6 +99,13 @@ AAAaAaaaaaAAAaAaAaAaAaaAaAaaAAaA
 0713715377223
 [crchack]$ echo "0713715377223" | ./crchack -
 baadf00d
+```
+
+In the latter example, repetition can be avoided by utilizing brace expansions:
+
+```
+[crchack]$ echo "1234567654321" | ./crchack -b ".{0-2}:-1:1" - baadf00d
+0713715377223
 ```
 
 Obtaining the target checksum is impossible if given an insufficient number of

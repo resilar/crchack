@@ -153,6 +153,7 @@ static struct {
     int verbose;
 } input;
 
+static int handle_slice_option(const char *slice);
 static FILE *handle_message_file(const char *filename, size_t *size);
 
 /*
@@ -206,26 +207,8 @@ static int handle_options(int argc, char *argv[])
             has_offset = c;
             break;
         case 'b':
-            if (!(input.nslices & (input.nslices + 1))) {
-                struct slice *new;
-                if (input.slices == NULL) {
-                    new = malloc(sizeof(struct slice));
-                } else {
-                    size_t capacity = 2*(input.nslices + 1);
-                    new = realloc(input.slices, capacity*sizeof(struct slice));
-                }
-                if (!new) {
-                    fprintf(stderr, "out-of-memory allocating slice %zu\n",
-                            input.nslices + 1);
-                    return 1;
-                }
-                input.slices = new;
-            }
-            if (!parse_slice(suckarg, &input.slices[input.nslices])) {
-                fprintf(stderr, "invalid slice '%s'\n", suckarg);
+            if (!handle_slice_option(suckarg))
                 return 1;
-            }
-            input.nslices++;
             break;
 
         case ':':
@@ -429,89 +412,6 @@ static int handle_options(int argc, char *argv[])
     return 0;
 }
 
-static FILE *handle_message_file(const char *filename, size_t *size)
-{
-    fpos_t start;
-    FILE *in, *temp;
-    char buf[BUFSIZ];
-
-    /* Initialize CRC for empty message */
-    if (!bigint_init(&input.checksum, input.crc.width))
-        return NULL;
-    bigint_load_zeros(&input.checksum);
-    crc(&input.crc, NULL, (*size = 0), &input.checksum);
-
-    /* Get input stream for calculating CRC */
-    if ((in = !strcmp(filename, "-") ? stdin : fopen(filename, "rb")) == NULL) {
-        fprintf(stderr, "open '%s' for reading failed\n", filename);
-        return NULL;
-    }
-
-    temp = NULL;
-    if (input.has_target) {
-        if (in == stdin || fgetpos(in, &start) != 0) {
-            /*
-             * Modifying input message but got a non-seekable file stream.
-             * As a workaround, copy the input message to a temporary file.
-             */
-            if (input.verbose >= 1)
-                fputs("creating temp file to store input message\n", stderr);
-            if (!(temp = tmpfile())) {
-                fputs("error creating temp file for input message\n", stderr);
-                goto fail;
-            }
-        }
-        if (fgetpos(temp ? temp : in, &start) != 0) {
-            fputs("fgetpos() error for ", stderr);
-            if (temp) fputs("temp file of ", stderr);
-            fprintf(stderr, "input file '%s'\n", filename);
-            goto fail;
-        }
-    }
-
-    while (!feof(in)) {
-        size_t n = fread(buf, sizeof(char), BUFSIZ, in);
-        if (ferror(in)) {
-            fprintf(stderr, "error reading message from '%s'\n", filename);
-            goto fail;
-        } else if (temp) {
-            size_t i = 0;
-            while (i < n) {
-                size_t m = fwrite(buf + i, sizeof(char), n - i, temp);
-                if (!m || ferror(temp)) {
-                    fputs("error writing to temp file\n", stderr);
-                    goto fail;
-                }
-                i += m;
-            }
-        }
-        crc_append(&input.crc, buf, n, &input.checksum);
-        *size += n;
-    }
-
-    if (input.has_target) {
-        /* Rewind */
-        if (temp) {
-            fclose(in);
-            in = temp;
-        }
-        if (fsetpos(in, &start) != 0) {
-            fputs("fsetpos() error for ", stderr);
-            if (temp) fputs("temporary file of ", stderr);
-            fprintf(stderr, "input file '%s'\n", filename);
-            goto fail;
-        }
-    }
-
-    return in;
-
-fail:
-    if (input.has_target && temp != NULL)
-        fclose(temp);
-    fclose(in);
-    return NULL;
-}
-
 /*
  * Recursive descent parser for slices (-b).
  */
@@ -523,7 +423,7 @@ static int peek(const char **pp)
 
 static int accept(const char **pp, char ch)
 {
-    return (peek(pp) == ch && *pp) ? *(*pp)++ : 0;
+    return peek(pp) == ch ? *(*pp)++ : 0;
 }
 
 static int accept_any(const char **pp, const char *set)
@@ -686,6 +586,160 @@ static int parse_slice(const char *p, struct slice *slice)
     }
 
     return 1;
+}
+
+static int handle_slice_option(const char *slice)
+{
+    /* Brace expansions */
+    const char *p = strchr(slice, '{');
+    if (p) {
+        size_t n;
+        char *buf, *end;
+        const char *start, *q = p + 1;
+        do {
+            n = strspn(q, "0123456789");
+            q += n;
+            if (n && accept(&q, '-')) {
+                n = strspn(q, "0123456789");
+                q += n;
+            }
+        } while (n && accept(&q, ','));
+        if (*q != '}' || !n) {
+            fprintf(stderr, "invalid expansion in slice '%s'\n", slice);
+            return 0;
+        }
+        buf = malloc(strlen(slice) + 1);
+        if (!buf) {
+            fprintf(stderr, "out-of-memory allocating string '%s'\n", slice);
+            return 0;
+        }
+        start = p;
+        do {
+            bitsize_t i, j;
+            i = j = (bitsize_t)strtoull(start+1, (char **)&end, 10);
+            if (end && *end == '-')
+                j = (bitsize_t)strtoull(end+1, (char **)&end, 10);
+            if (i > j) { j ^= i; i ^= j; j ^= i; }
+            while (i <= j) {
+                sprintf(buf, "%.*s%ju%s", (int)(p - slice), slice, i, q+1);
+                if (!handle_slice_option(buf)) {
+                    free(buf);
+                    return 0;
+                }
+                i++;
+            }
+        } while ((start = end) && *end == ',');
+        free(buf);
+        return 1;
+    }
+
+    /* Reserve space in input.slices[] */
+    if (!(input.nslices & (input.nslices + 1))) {
+        struct slice *new;
+        if (input.slices == NULL) {
+            new = malloc(sizeof(struct slice));
+        } else {
+            size_t capacity = 2*(input.nslices + 1);
+            new = realloc(input.slices, capacity*sizeof(struct slice));
+        }
+        if (!new) {
+            fprintf(stderr, "out-of-memory allocating slice %zu\n",
+                    input.nslices + 1);
+            return 0;
+        }
+        input.slices = new;
+    }
+
+    /* Parse slice string */
+    if (!parse_slice(slice, &input.slices[input.nslices])) {
+        fprintf(stderr, "invalid slice '%s'\n", slice);
+        return 0;
+    }
+    input.nslices++;
+    return 1;
+}
+
+static FILE *handle_message_file(const char *filename, size_t *size)
+{
+    fpos_t start;
+    FILE *in, *temp;
+    char buf[BUFSIZ];
+
+    /* Initialize CRC for empty message */
+    if (!bigint_init(&input.checksum, input.crc.width))
+        return NULL;
+    bigint_load_zeros(&input.checksum);
+    crc(&input.crc, NULL, (*size = 0), &input.checksum);
+
+    /* Get input stream for calculating CRC */
+    if ((in = !strcmp(filename, "-") ? stdin : fopen(filename, "rb")) == NULL) {
+        fprintf(stderr, "open '%s' for reading failed\n", filename);
+        return NULL;
+    }
+
+    temp = NULL;
+    if (input.has_target) {
+        if (in == stdin || fgetpos(in, &start) != 0) {
+            /*
+             * Modifying input message but got a non-seekable file stream.
+             * As a workaround, copy the input message to a temporary file.
+             */
+            if (input.verbose >= 1)
+                fputs("creating temp file to store input message\n", stderr);
+            if (!(temp = tmpfile())) {
+                fputs("error creating temp file for input message\n", stderr);
+                goto fail;
+            }
+        }
+        if (fgetpos(temp ? temp : in, &start) != 0) {
+            fputs("fgetpos() error for ", stderr);
+            if (temp) fputs("temp file of ", stderr);
+            fprintf(stderr, "input file '%s'\n", filename);
+            goto fail;
+        }
+    }
+
+    while (!feof(in)) {
+        size_t n = fread(buf, sizeof(char), BUFSIZ, in);
+        if (ferror(in)) {
+            fprintf(stderr, "error reading message from '%s'\n", filename);
+            goto fail;
+        } else if (temp) {
+            size_t i = 0;
+            while (i < n) {
+                size_t m = fwrite(buf + i, sizeof(char), n - i, temp);
+                if (!m || ferror(temp)) {
+                    fputs("error writing to temp file\n", stderr);
+                    goto fail;
+                }
+                i += m;
+            }
+        }
+        crc_append(&input.crc, buf, n, &input.checksum);
+        *size += n;
+    }
+
+    if (input.has_target) {
+        /* Rewind */
+        if (temp) {
+            fclose(in);
+            in = temp;
+        }
+        if (fsetpos(in, &start) != 0) {
+            fputs("fsetpos() error for ", stderr);
+            if (temp) fputs("temporary file of ", stderr);
+            fprintf(stderr, "input file '%s'\n", filename);
+            goto fail;
+        }
+    }
+
+    return in;
+
+fail:
+    if (input.has_target && temp != NULL)
+        fclose(temp);
+    fclose(in);
+    return NULL;
 }
 
 static void input_crc(bitsize_t pos, struct bigint *checksum)
