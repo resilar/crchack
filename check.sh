@@ -31,7 +31,7 @@ check () {
     printf "\n"
 }
 
-# curl -s http://reveng.sourceforge.net/crc-catalogue/all.htm        \
+# curl -s https://reveng.sourceforge.io/crc-catalogue/all.htm        \
 #  | grep -o 'width=.*name="[^"]*"' | sed 's/\s\+/ /g'               \
 #  | sed 's/width=/-w/' | sed 's/poly=0x/-p/' | sed 's/init=0x/-i/'  \
 #  | sed 's/refin=false //' | sed 's/refin=true/-r/'                 \
@@ -62,6 +62,7 @@ check "-w8 -p39 -rR" "15" "CRC-8/DARC"
 check "-w8 -pd5" "bc" "CRC-8/DVB-S2"
 check "-w8 -p1d" "37" "CRC-8/GSM-A"
 check "-w8 -p49 -xff" "94" "CRC-8/GSM-B"
+check "-w8 -p1d -iff" "b4" "CRC-8/HITAG"
 check "-w8 -p07 -x55" "a1" "CRC-8/I-432-1"
 check "-w8 -p1d -ifd" "7e" "CRC-8/I-CODE"
 check "-w8 -p9b" "ea" "CRC-8/LTE"
@@ -103,6 +104,7 @@ check "-w16 -p1021 -iffff -rR -xffff" "906e" "CRC-16/IBM-SDLC"
 check "-w16 -p1021 -ic6c6 -rR" "bf05" "CRC-16/ISO-IEC-14443-3-A"
 check "-w16 -p1021 -rR" "2189" "CRC-16/KERMIT"
 check "-w16 -p6f63" "bdf4" "CRC-16/LJ1200"
+check "-w16 -p5935 -iffff" "772b" "CRC-16/M17"
 check "-w16 -p8005 -rR -xffff" "44c2" "CRC-16/MAXIM-DOW"
 check "-w16 -p1021 -iffff -rR" "6f91" "CRC-16/MCRF4XX"
 check "-w16 -p8005 -iffff -rR" "4b37" "CRC-16/MODBUS"
@@ -139,11 +141,14 @@ check "-w32 -p04c11db7 -xffffffff" "765e7680" "CRC-32/CKSUM"
 check "-w32 -p1edc6f41 -iffffffff -rR -xffffffff" "e3069283" "CRC-32/ISCSI"
 check "-w32 -p04c11db7 -iffffffff -rR -xffffffff" "cbf43926" "CRC-32/ISO-HDLC"
 check "-w32 -p04c11db7 -iffffffff -rR" "340bc6d9" "CRC-32/JAMCRC"
+check "-w32 -p741b8cd7 -iffffffff -rR" "d2c22f51" "CRC-32/MEF"
 check "-w32 -p04c11db7 -iffffffff" "0376e6e7" "CRC-32/MPEG-2"
 check "-w32 -p000000af" "bd0be338" "CRC-32/XFER"
 check "-w40 -p0004820009 -xffffffffff" "d4164fc646" "CRC-40/GSM"
 check "-w64 -p42f0e1eba9ea3693" "6c40df5f0b497347" "CRC-64/ECMA-182"
 check "-w64 -p000000000000001b -iffffffffffffffff -rR -xffffffffffffffff" "b90956c775a41001" "CRC-64/GO-ISO"
+check "-w64 -p259c84cba6426349 -iffffffffffffffff -rR" "75d4b74f024eceea" "CRC-64/MS"
+check "-w64 -pad93d23594c935a9 -rR" "e9c6d914c4b8d9ca" "CRC-64/REDIS"
 check "-w64 -p42f0e1eba9ea3693 -iffffffffffffffff -xffffffffffffffff" "62ec59e3f1a4f00a" "CRC-64/WE"
 check "-w64 -p42f0e1eba9ea3693 -iffffffffffffffff -rR -xffffffffffffffff" "995dc9bbdf1939fa" "CRC-64/XZ"
 check "-w82 -p0308c0111011401440411 -rR" "09ea83f625023801fd612" "CRC-82/DARC"
