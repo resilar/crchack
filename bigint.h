@@ -18,7 +18,7 @@ struct bigint {
 };
 
 #define LIMB_BITS (8 * (bitsize_t)sizeof(limb_t))
-#define BITS_TO_LIMBS(x) ((size_t)((x) ? (1 + ((x) - 1) / LIMB_BITS) : 0))
+#define BITS_TO_LIMBS(x) ((size_t)(((x) + LIMB_BITS-1) / LIMB_BITS))
 
 /* Size of bigint in bits */
 static inline bitsize_t bigint_bits(const struct bigint *dest)
