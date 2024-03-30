@@ -28,47 +28,6 @@ static void help(char *argv0)
 }
 
 /*
- * Structure and functions for slices of bit indices.
- */
-struct slice {
-    bitoffset_t l;
-    bitoffset_t r;
-    bitoffset_t s;
-    int relative;
-};
-
-/*
- * Extract bits defined by a slice and return the total number of bits.
- */
-static bitsize_t bits_of_slice(struct slice *slice,
-                               bitsize_t end, bitsize_t *bits)
-{
-    bitsize_t n;
-    bitoffset_t l = slice->l, r = slice->r, s = slice->s;
-    int relative = slice->relative;
-    if (s == 0) {
-        fprintf(stderr, "slice step cannot be zero\n");
-        return 0;
-    }
-
-    if (l < 0 && (l += end) < 0) l = 0;
-    else if (l > (bitoffset_t)end) l = end;
-    if (relative) r += l;
-    if (r < 0 && (r += end) < 0) r = 0;
-    else if (r > (bitoffset_t)end) r = end;
-
-    for (n = 0; (s > 0 && l < r) || (s < 0 && l > r); n++) {
-        if (bits) *bits++ = l;
-        l += s;
-    }
-
-    return n;
-}
-
-static int parse_offset(const char *p, bitoffset_t *offset);
-static int parse_slice(const char *p, struct slice *slice);
-
-/*
  * suckopts(): POSIXish minimal getopt(3) implementation.
  */
 static int suckind = 1;
@@ -127,7 +86,50 @@ static int suckopts(int argc, char * const argv[], const char *suckstring)
 }
 
 /*
- * User input and command-line options.
+ * Python-style slices (left:right:step) representing a slice of bit indices.
+ */
+struct slice {
+    bitoffset_t l;
+    bitoffset_t r;
+    bitoffset_t s;
+    int relative;   /* non-zero if r is relative to l */
+};
+
+/*
+ * Extract at most `limit` bits defined by a slice into an output array `bits`.
+ * The return value is the total number of extracted bits.
+ */
+static bitsize_t bits_of_slice(struct slice *slice,
+                               bitsize_t end, bitsize_t limit,
+                               bitsize_t *bits)
+{
+    bitsize_t n;
+    bitoffset_t l = slice->l, r = slice->r, s = slice->s;
+    if (s == 0) {
+        fprintf(stderr, "slice step cannot be zero\n");
+        return 0;
+    }
+
+    if (l < 0 && (l += end) < 0) l = 0;
+    else if ((bitsize_t)l > end) l = end;
+
+    if (slice->relative) r += l;
+
+    if (r < 0 && (r += end) < 0) r = 0;
+    else if ((bitsize_t)r > end) r = end;
+
+    n = 0;
+    while ((!limit || n < limit) && ((s > 0 && l < r) || (s < 0 && l > r))) {
+        if (bits) *bits++ = l;
+        l += s;
+        n++;
+    }
+
+    return n;
+}
+
+/*
+ * User input and command-line options (filled by handle_args()).
  */
 static struct {
     char *filename;
@@ -145,13 +147,23 @@ static struct {
     int has_target;
 
     bitsize_t *bits;
-    size_t nbits;
+    bitsize_t nbits;
 
     struct slice *slices;
     size_t nslices;
 
     int verbose;
 } input;
+
+/*
+ * Forward declarations for handle_args().
+ */
+static int peek(const char **pp);
+static int accept(const char **pp, char ch);
+static int accept_any(const char **pp, const char *set);
+
+static int parse_offset(const char *p, bitoffset_t *offset);
+static int parse_slice(const char *p, struct slice *slice);
 
 static int handle_slice_option(const char *slice);
 static FILE *handle_message_file(const char *filename, size_t *size);
@@ -161,7 +173,7 @@ static FILE *handle_message_file(const char *filename, size_t *size);
  *
  * Returns an exit code (0 for success).
  */
-static int handle_options(int argc, char *argv[])
+static int handle_args(int argc, char *argv[])
 {
     bitsize_t nbits;
     bitoffset_t offset;
@@ -170,7 +182,7 @@ static int handle_options(int argc, char *argv[])
     char *poly, *init, reflect_in, reflect_out, *xor_out, *target;
 
     offset = 0;
-    has_offset =  0;
+    has_offset = 0;
     target = NULL;
 
     /* CRC parameters */
@@ -200,11 +212,15 @@ static int handle_options(int argc, char *argv[])
                 fprintf(stderr, "multiple -oO not allowed\n");
                 return 1;
             }
-            if (!parse_offset(suckarg, &offset)) {
+            if (parse_offset(suckarg, &offset)) {
+                const char *p = suckarg;
+                if (!offset && peek(&p) == '-')
+                    c ^= 'o' ^ 'O'; /* Swap -o/-O to handle negative zero */
+                has_offset = c;
+            } else {
                 fprintf(stderr, "invalid offset '%s'\n", suckarg);
                 return 1;
             }
-            has_offset = c;
             break;
         case 'b':
             if (!handle_slice_option(suckarg))
@@ -322,8 +338,10 @@ static int handle_options(int argc, char *argv[])
 
     /* Determine (upper bound for) size of the input.bits array */
     nbits = (has_offset || !input.nslices) ? input.crc.width : 0;
-    for (i = 0; i < input.nslices; i++)
-        nbits += bits_of_slice(&input.slices[i], input.bitlen, NULL);
+    for (i = 0; i < input.nslices; i++) {
+        nbits += bits_of_slice(&input.slices[i], input.bitlen, input.crc.width,
+                               NULL);
+    }
 
     /* Fill input.bits */
     if (nbits) {
@@ -334,9 +352,10 @@ static int handle_options(int argc, char *argv[])
         }
 
         for (i = 0; i < input.nslices; i++) {
-            size_t n = bits_of_slice(&input.slices[i], input.bitlen,
-                                     &input.bits[input.nbits]);
-            input.nbits += n;
+            input.nbits += bits_of_slice(
+                &input.slices[i], input.bitlen, input.crc.width,
+                &input.bits[input.nbits]
+            );
         }
 
         /* Handle '-oO' offsets */
@@ -569,7 +588,7 @@ static int parse_slice(const char *p, struct slice *slice)
     accept(&p, ':');
 
     /* l:R:s */
-    slice->relative = accept(&p, '+');
+    slice->relative = !!accept(&p, '+');
     if (!peek(&p)) return 1;
     if (*p != ':' && !(p = parse_slice_offset(p, &slice->r)))
         return 0;
@@ -833,11 +852,11 @@ int main(int argc, char *argv[])
     int exit_code;
     bitoffset_t ret;
 
-    /* Parse command-line */
-    if ((exit_code = handle_options(argc, argv)))
+    /* Parse command-line interface arguments */
+    if ((exit_code = handle_args(argc, argv)))
         goto finish;
 
-    /* Print CRC and exit if no target checksum given */
+    /* Print CRC to stdout and exit if no target checksum given */
     if (!input.has_target) {
         bigint_print(&input.checksum);
         puts("");
