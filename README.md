@@ -131,8 +131,8 @@ bb3d
 cbf43926
 ```
 
-[CRC RevEng](http://reveng.sourceforge.net/) (by Greg Cook) includes a
-comprehensive [catalogue](http://reveng.sourceforge.net/crc-catalogue/) of
+[CRC RevEng](https://reveng.sourceforge.io/) (by Greg Cook) includes a
+comprehensive [catalogue](https://reveng.sourceforge.io/crc-catalogue/) of
 cyclic redundancy check algorithms and their parameters. [check.sh](check.sh)
 illustrates how to convert the CRC catalogue entries to crchack CLI flags.
 
